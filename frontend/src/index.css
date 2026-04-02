@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --color-snow-50: #f0f9ff;
+  --color-snow-100: #e0f2fe;
+  --color-snow-200: #b9e6fe;
+  --color-snow-300: #7cd4fd;
+  --color-snow-400: #36bffa;
+  --color-snow-500: #29B5E8;
+  --color-snow-600: #0694c8;
+  --color-snow-700: #0675a2;
+  --color-snow-800: #0a6185;
+  --color-snow-900: #0e506e;
+
+  --color-slate-750: #283548;
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 font-sans antialiased;
+}
