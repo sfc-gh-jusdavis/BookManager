@@ -1,0 +1,317 @@
+[
+  {
+    "id": "raw.accounts",
+    "schema": "RAW",
+    "tableName": "ACCOUNTS",
+    "description": "Account master data from CRM / internal systems.",
+    "grain": "One row per account",
+    "refreshCadence": "Daily (incremental upsert on ACCOUNT_ID)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique account identifier", "notes": "" },
+      { "name": "ACCOUNT_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Customer account name", "notes": "" },
+      { "name": "INDUSTRY", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Industry vertical", "notes": "" },
+      { "name": "ACE_ASSIGNED", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "User ID of the assigned ACE", "notes": "" },
+      { "name": "ENGAGEMENT_STATUS", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "One of: Pre-Activation, Active, Completed", "notes": "" },
+      { "name": "STATUS", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Account health status", "notes": "" },
+      { "name": "USE_CASE_COUNT", "type": "INTEGER", "nullable": false, "isPK": false, "isFK": false, "description": "Number of active use cases", "notes": "" },
+      { "name": "TOTAL_CREDITS_ALLOCATED", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Total credit allocation for the account", "notes": "" },
+      { "name": "ACTIVATION_START_DATE", "type": "DATE", "nullable": false, "isPK": false, "isFK": false, "description": "Date the account entered activation", "notes": "" },
+      { "name": "REGION", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "Geographic region", "notes": "" },
+      { "name": "ACV", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Annual contract value", "notes": "" },
+      { "name": "CONSUMPTION_YTD", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Year-to-date credit consumption", "notes": "" }
+    ]
+  },
+  {
+    "id": "raw.credit_consumption",
+    "schema": "RAW",
+    "tableName": "CREDIT_CONSUMPTION",
+    "description": "Daily credit consumption telemetry from the Snowflake platform.",
+    "grain": "One row per account per date (optionally per warehouse)",
+    "refreshCadence": "Daily append",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "MEASUREMENT_DATE", "type": "DATE", "nullable": false, "isPK": true, "isFK": false, "description": "Date of measurement", "notes": "" },
+      { "name": "CREDITS_USED", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Total credits consumed on this date", "notes": "" },
+      { "name": "CREDITS_ALLOCATED", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Total credits available", "notes": "" },
+      { "name": "WAREHOUSE_NAME", "type": "VARCHAR", "nullable": true, "isPK": true, "isFK": false, "description": "Warehouse name", "notes": "" },
+      { "name": "COMPUTE_CREDITS", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Credits from compute usage", "notes": "" },
+      { "name": "STORAGE_CREDITS", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Credits from storage", "notes": "" },
+      { "name": "CLOUD_SERVICES_CREDITS", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Credits from cloud services layer", "notes": "" },
+      { "name": "DAILY_TREND", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Day-over-day change percentage", "notes": "" },
+      { "name": "MONTHLY_TREND", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Month-over-month change percentage", "notes": "" }
+    ]
+  },
+  {
+    "id": "raw.feature_usage",
+    "schema": "RAW",
+    "tableName": "FEATURE_USAGE",
+    "description": "Snowflake feature adoption telemetry.",
+    "grain": "One row per account per feature per measurement period",
+    "refreshCadence": "Weekly",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "FEATURE_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Name of the Snowflake feature", "notes": "" },
+      { "name": "USAGE_COUNT", "type": "INTEGER", "nullable": false, "isPK": false, "isFK": false, "description": "Number of times the feature was used", "notes": "" },
+      { "name": "FIRST_USED", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Date of first usage", "notes": "" },
+      { "name": "LAST_USED", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Date of most recent usage", "notes": "" },
+      { "name": "MEASUREMENT_PERIOD", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Period granularity (e.g., monthly, weekly)", "notes": "" }
+    ]
+  },
+  {
+    "id": "raw.users",
+    "schema": "RAW",
+    "tableName": "USERS",
+    "description": "Internal user / team roster from HR or identity systems.",
+    "grain": "One row per user",
+    "refreshCadence": "Daily (full refresh from identity provider)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "USER_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique user identifier", "notes": "" },
+      { "name": "EMAIL", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Corporate email", "notes": "" },
+      { "name": "DISPLAY_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Full name", "notes": "" },
+      { "name": "ROLE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "One of: ace, acem", "notes": "" },
+      { "name": "TEAM_ID", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "Team or org unit identifier", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.use_cases",
+    "schema": "APP",
+    "tableName": "USE_CASES",
+    "description": "Tracks customer use case deployments.",
+    "grain": "One row per use case",
+    "refreshCadence": "Upsert on USE_CASE_ID",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "USE_CASE_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique use case identifier", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "ACCOUNT_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Denormalized for query convenience", "notes": "" },
+      { "name": "USE_CASE_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Short name for the use case", "notes": "" },
+      { "name": "DESCRIPTION", "type": "TEXT", "nullable": false, "isPK": false, "isFK": false, "description": "Detailed description", "notes": "" },
+      { "name": "STATUS", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Current status (e.g., In Progress, Completed, Blocked)", "notes": "" },
+      { "name": "STAGE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Deployment stage (e.g., Discovery, POC, Production)", "notes": "" },
+      { "name": "COMPLEXITY", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "Complexity rating (e.g., Low, Medium, High)", "notes": "" },
+      { "name": "GO_LIVE_DATE", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Actual go-live date (null if not yet live)", "notes": "" },
+      { "name": "TARGET_GO_LIVE_DATE", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Planned go-live date", "notes": "" },
+      { "name": "LEAD_SE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Solutions Engineer leading the use case", "notes": "" },
+      { "name": "ACE_ASSIGNED", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "ACE assigned to the account", "notes": "" },
+      { "name": "CREATED_DATE", "type": "DATE", "nullable": false, "isPK": false, "isFK": false, "description": "Date the use case was created", "notes": "" },
+      { "name": "LAST_MODIFIED_DATE", "type": "TIMESTAMP_NTZ", "nullable": false, "isPK": false, "isFK": false, "description": "Last modification timestamp", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.ps_notes",
+    "schema": "APP",
+    "tableName": "PS_NOTES",
+    "description": "Professional Services notes attached to use cases.",
+    "grain": "One row per note",
+    "refreshCadence": "Append-only",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "NOTE_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique note identifier", "notes": "" },
+      { "name": "USE_CASE_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References APP.USE_CASES", "notes": "" },
+      { "name": "AUTHOR", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Author name or user ID", "notes": "" },
+      { "name": "CONTENT", "type": "TEXT", "nullable": false, "isPK": false, "isFK": false, "description": "Full note content", "notes": "" },
+      { "name": "CREATED_AT", "type": "TIMESTAMP_NTZ", "nullable": false, "isPK": false, "isFK": false, "description": "Timestamp of creation", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.tmrs",
+    "schema": "APP",
+    "tableName": "TMRS",
+    "description": "Technical / Managed Resource requests.",
+    "grain": "One row per TMR",
+    "refreshCadence": "Upsert on TMR_ID",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "TMR_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique TMR identifier", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "ACCOUNT_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Denormalized account name", "notes": "" },
+      { "name": "REQUESTOR", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Person who submitted the TMR", "notes": "" },
+      { "name": "REQUEST_TYPE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Category of the request", "notes": "" },
+      { "name": "STATUS", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Current status (e.g., Pending, Approved, In Progress, Completed)", "notes": "" },
+      { "name": "PRIORITY", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Priority level (e.g., Low, Medium, High, Critical)", "notes": "" },
+      { "name": "REQUESTED_DATE", "type": "DATE", "nullable": false, "isPK": false, "isFK": false, "description": "Date the TMR was submitted", "notes": "" },
+      { "name": "START_DATE", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Date work began", "notes": "" },
+      { "name": "END_DATE", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Date work was completed", "notes": "" },
+      { "name": "ESTIMATED_HOURS", "type": "FLOAT", "nullable": true, "isPK": false, "isFK": false, "description": "Estimated effort in hours", "notes": "" },
+      { "name": "ACTUAL_HOURS", "type": "FLOAT", "nullable": true, "isPK": false, "isFK": false, "description": "Actual effort recorded", "notes": "" },
+      { "name": "USE_CASE_ID", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": true, "description": "Associated use case, if any", "notes": "" },
+      { "name": "OUTCOME", "type": "TEXT", "nullable": true, "isPK": false, "isFK": false, "description": "Summary of outcome upon completion", "notes": "" },
+      { "name": "ASSIGNED_TO", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "User ID of the assigned resource", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.tmr_review_notes",
+    "schema": "APP",
+    "tableName": "TMR_REVIEW_NOTES",
+    "description": "Review notes and comments on TMRs. Child table of APP.TMRS.",
+    "grain": "One row per review note",
+    "refreshCadence": "Append-only",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "NOTE_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique note identifier", "notes": "" },
+      { "name": "TMR_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References APP.TMRS", "notes": "" },
+      { "name": "AUTHOR_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "User ID of the note author", "notes": "" },
+      { "name": "AUTHOR_NAME", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Display name of the author", "notes": "" },
+      { "name": "CONTENT", "type": "TEXT", "nullable": false, "isPK": false, "isFK": false, "description": "Note content", "notes": "" },
+      { "name": "CREATED_AT", "type": "TIMESTAMP_NTZ", "nullable": false, "isPK": false, "isFK": false, "description": "Timestamp of creation", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.gong_calls",
+    "schema": "APP",
+    "tableName": "GONG_CALLS",
+    "description": "Ingested and structured Gong call data.",
+    "grain": "One row per call",
+    "refreshCadence": "Upsert on CALL_ID",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "CALL_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique call identifier (from Gong)", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "CALL_DATE", "type": "TIMESTAMP_NTZ", "nullable": false, "isPK": false, "isFK": false, "description": "Date/time of the call", "notes": "" },
+      { "name": "DURATION_MINUTES", "type": "INTEGER", "nullable": false, "isPK": false, "isFK": false, "description": "Call duration", "notes": "" },
+      { "name": "SUMMARY", "type": "TEXT", "nullable": false, "isPK": false, "isFK": false, "description": "LLM-generated or Gong-provided summary", "notes": "" },
+      { "name": "TOPICS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "List of topics discussed", "notes": "" },
+      { "name": "ACTION_ITEMS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Extracted action items", "notes": "" },
+      { "name": "NEXT_STEPS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Extracted next steps", "notes": "" },
+      { "name": "PARTICIPANTS_INTERNAL", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Internal attendees", "notes": "" },
+      { "name": "PARTICIPANTS_EXTERNAL", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "External attendees", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.account_resources",
+    "schema": "APP",
+    "tableName": "ACCOUNT_RESOURCES",
+    "description": "Links and notes attached to accounts (Google Drive, Confluence, Slack, etc.).",
+    "grain": "One row per resource",
+    "refreshCadence": "Upsert on RESOURCE_ID",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "RESOURCE_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique resource identifier", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "RESOURCE_TYPE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "One of: note, link", "notes": "" },
+      { "name": "TITLE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Display title", "notes": "" },
+      { "name": "CONTENT", "type": "TEXT", "nullable": false, "isPK": false, "isFK": false, "description": "Note body or link URL", "notes": "" },
+      { "name": "LINK_TYPE", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "One of: google_drive, confluence, email, slack, other (null for notes)", "notes": "" },
+      { "name": "CREATED_BY", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "User ID of creator", "notes": "" },
+      { "name": "CREATED_AT", "type": "TIMESTAMP_NTZ", "nullable": false, "isPK": false, "isFK": false, "description": "Timestamp of creation", "notes": "" }
+    ]
+  },
+  {
+    "id": "app.use_case_forecasts",
+    "schema": "APP",
+    "tableName": "USE_CASE_FORECASTS",
+    "description": "ACE forecast overrides and ML-generated auto-categorizations for use cases.",
+    "grain": "One row per use case per quarter",
+    "refreshCadence": "Upsert on (USE_CASE_ID, QUARTER)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "USE_CASE_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": true, "description": "References APP.USE_CASES", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "References RAW.ACCOUNTS", "notes": "" },
+      { "name": "QUARTER", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Fiscal quarter (e.g., FY26-Q1)", "notes": "" },
+      { "name": "AUTO_CATEGORY", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "ML-generated category: Commit, Most Likely, Stretch", "notes": "" },
+      { "name": "OVERRIDE_CATEGORY", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "ACE manual override category", "notes": "" },
+      { "name": "OVERRIDE_NOTE", "type": "TEXT", "nullable": true, "isPK": false, "isFK": false, "description": "Justification for the override", "notes": "" },
+      { "name": "OVERRIDE_BY", "type": "VARCHAR", "nullable": true, "isPK": false, "isFK": false, "description": "User ID who made the override", "notes": "" },
+      { "name": "OVERRIDE_AT", "type": "TIMESTAMP_NTZ", "nullable": true, "isPK": false, "isFK": false, "description": "Timestamp of the override", "notes": "" },
+      { "name": "PENDING_APPROVAL", "type": "BOOLEAN", "nullable": false, "isPK": false, "isFK": false, "description": "Whether the override needs ACEM approval", "notes": "" }
+    ]
+  },
+  {
+    "id": "ml.credit_forecasts",
+    "schema": "ML",
+    "tableName": "CREDIT_FORECASTS",
+    "description": "ML model output: predicted credit consumption 30/60/90 days forward with confidence intervals.",
+    "grain": "One row per account per forecast date",
+    "refreshCadence": "Daily (full overwrite per scoring run)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "Target account", "notes": "" },
+      { "name": "FORECAST_DATE", "type": "DATE", "nullable": false, "isPK": false, "isFK": false, "description": "Date the forecast was generated", "notes": "" },
+      { "name": "PREDICTED_CREDITS_30D", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Predicted consumption, next 30 days", "notes": "" },
+      { "name": "PREDICTED_CREDITS_60D", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Predicted consumption, next 60 days", "notes": "" },
+      { "name": "PREDICTED_CREDITS_90D", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Predicted consumption, next 90 days", "notes": "" },
+      { "name": "CONFIDENCE_INTERVAL_LOWER", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Lower bound of 95% CI", "notes": "" },
+      { "name": "CONFIDENCE_INTERVAL_UPPER", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Upper bound of 95% CI", "notes": "" },
+      { "name": "TREND_DIRECTION", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "increasing, stable, or decreasing", "notes": "" },
+      { "name": "MODEL_VERSION", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Version tag for reproducibility", "notes": "" }
+    ]
+  },
+  {
+    "id": "ml.use_case_predictions",
+    "schema": "ML",
+    "tableName": "USE_CASE_PREDICTIONS",
+    "description": "ML model output: predicted go-live dates, confidence scores, and risk factors for in-progress use cases.",
+    "grain": "One row per use case per scoring run",
+    "refreshCadence": "Weekly (full overwrite per scoring run)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "USE_CASE_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "Target use case", "notes": "" },
+      { "name": "ACCOUNT_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "Parent account", "notes": "" },
+      { "name": "PREDICTED_GO_LIVE_DATE", "type": "DATE", "nullable": false, "isPK": false, "isFK": false, "description": "Predicted go-live date", "notes": "" },
+      { "name": "CONFIDENCE_SCORE", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "0.0 - 1.0 confidence", "notes": "" },
+      { "name": "RISK_FACTORS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Identified risk factors", "notes": "" },
+      { "name": "PREDICTED_STATUS", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Expected status at prediction horizon", "notes": "" },
+      { "name": "DAYS_REMAINING_ESTIMATE", "type": "INTEGER", "nullable": false, "isPK": false, "isFK": false, "description": "Estimated days to completion", "notes": "" },
+      { "name": "SIMILAR_USE_CASE_REFS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "IDs of similar historical use cases", "notes": "" },
+      { "name": "MODEL_VERSION", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Version tag", "notes": "" }
+    ]
+  },
+  {
+    "id": "ml.tmr_predictions",
+    "schema": "ML",
+    "tableName": "TMR_PREDICTIONS",
+    "description": "ML model output: TMR success probability, predicted completion dates, and risk levels.",
+    "grain": "One row per TMR",
+    "refreshCadence": "On-demand (upsert on TMR_ID)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "TMR_ID", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": true, "description": "Target TMR", "notes": "" },
+      { "name": "PREDICTED_SUCCESS_PROBABILITY", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "0.0 - 1.0 probability", "notes": "" },
+      { "name": "PREDICTED_COMPLETION_DATE", "type": "DATE", "nullable": true, "isPK": false, "isFK": false, "description": "Estimated completion date", "notes": "" },
+      { "name": "RISK_LEVEL", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "low, medium, or high", "notes": "" },
+      { "name": "RECOMMENDED_ACTIONS", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Suggested interventions", "notes": "" },
+      { "name": "COMPARABLE_TMR_OUTCOMES", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "IDs of similar historical TMRs", "notes": "" },
+      { "name": "MODEL_VERSION", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Version tag", "notes": "" }
+    ]
+  },
+  {
+    "id": "ml.similar_deployments",
+    "schema": "ML",
+    "tableName": "SIMILAR_DEPLOYMENTS",
+    "description": "Historical deployment records used for nearest-neighbor similarity lookups.",
+    "grain": "One row per completed deployment",
+    "refreshCadence": "Monthly (full rebuild)",
+    "snowhousePath": "",
+    "notes": "",
+    "columns": [
+      { "name": "DEPLOYMENT_ID", "type": "VARCHAR", "nullable": false, "isPK": true, "isFK": false, "description": "Unique deployment record", "notes": "" },
+      { "name": "USE_CASE_TYPE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Category of use case", "notes": "" },
+      { "name": "INDUSTRY", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Customer industry", "notes": "" },
+      { "name": "ACCOUNT_SIZE", "type": "VARCHAR", "nullable": false, "isPK": false, "isFK": false, "description": "Account size tier", "notes": "" },
+      { "name": "DAYS_TO_GO_LIVE", "type": "INTEGER", "nullable": false, "isPK": false, "isFK": false, "description": "Actual days from start to go-live", "notes": "" },
+      { "name": "CREDITS_CONSUMED", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Total credits consumed during deployment", "notes": "" },
+      { "name": "FEATURES_USED", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Snowflake features leveraged", "notes": "" },
+      { "name": "SUCCESS_RATING", "type": "FLOAT", "nullable": true, "isPK": false, "isFK": false, "description": "0.0 - 5.0 post-deployment rating", "notes": "" },
+      { "name": "BLOCKERS_ENCOUNTERED", "type": "ARRAY", "nullable": false, "isPK": false, "isFK": false, "description": "Categorized blockers", "notes": "" },
+      { "name": "RESOURCES_USED", "type": "FLOAT", "nullable": false, "isPK": false, "isFK": false, "description": "Total resource hours invested", "notes": "" }
+    ]
+  }
+]
