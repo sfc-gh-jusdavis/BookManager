@@ -11,6 +11,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Snowflake,
+  ShieldAlert,
 } from 'lucide-react'
 import { clsx } from 'clsx'
 
@@ -19,6 +20,7 @@ interface NavItem {
   label: string
   icon: React.ReactNode
   acemOnly?: boolean
+  adminOnly?: boolean
 }
 
 const NAV_ITEMS: NavItem[] = [
@@ -28,10 +30,11 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/tmrs', label: 'TMRs', icon: <ClipboardList size={20} /> },
   { to: '/team', label: 'Team', icon: <Users size={20} />, acemOnly: true },
   { to: '/data-catalog', label: 'Data Catalog', icon: <Database size={20} /> },
+  { to: '/admin/costs', label: 'Cost Monitor', icon: <ShieldAlert size={20} />, adminOnly: true },
 ]
 
 export function Sidebar() {
-  const { currentUser } = useAuth()
+  const { currentUser, isAdmin } = useAuth()
   const [collapsed, setCollapsed] = useState(() => {
     const saved = localStorage.getItem('sidebar-collapsed')
     return saved === 'true'
@@ -42,7 +45,7 @@ export function Sidebar() {
   }, [collapsed])
 
   const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.acemOnly || currentUser.role === 'acem'
+    (item) => (!item.acemOnly || currentUser.role === 'acem') && (!item.adminOnly || isAdmin)
   )
 
   return (

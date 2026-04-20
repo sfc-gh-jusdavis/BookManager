@@ -1,10 +1,9 @@
 import { useState, useMemo } from 'react'
 import { Header } from '../components/layout/Header'
 import { useAuth } from '../context/AuthContext'
-import { MOCK_TMRS } from '../mocks/tmrs'
+import { useTMRs, useAceDisplayNames } from '../api/hooks'
 import { TMRTable } from '../components/tmr/TMRTable'
 import { AssignModal } from '../components/tmr/AssignModal'
-import { ACE_DISPLAY_NAMES } from '../mocks/aceDisplayNames'
 import type { TMR, TMRReviewNote } from '../types'
 import {
   FileText,
@@ -29,7 +28,15 @@ export function TMRs() {
   const { currentUser } = useAuth()
   const isManager = currentUser.role === 'acem'
 
-  const [tmrs, setTmrs] = useState<TMR[]>(MOCK_TMRS)
+  const { data: apiTmrs = [], isLoading } = useTMRs()
+  const { data: aceDisplayNames = {} } = useAceDisplayNames()
+
+  const [tmrOverrides, setTmrOverrides] = useState<Map<string, TMR>>(new Map())
+
+  const tmrs = useMemo(() => {
+    return apiTmrs.map((t) => tmrOverrides.get(t.tmr_id) ?? t)
+  }, [apiTmrs, tmrOverrides])
+
   const [statusFilter, setStatusFilter] = useState('All')
   const [priorityFilter, setPriorityFilter] = useState('All')
   const [typeFilter, setTypeFilter] = useState('All')
@@ -87,7 +94,7 @@ export function TMRs() {
   const handleAssign = (aceId: string, note: string) => {
     if (!assignTarget) return
     const managerName =
-      ACE_DISPLAY_NAMES[currentUser.user_id] ?? currentUser.display_name
+      aceDisplayNames[currentUser.user_id] ?? currentUser.display_name
 
     const reviewNote: TMRReviewNote = {
       note_id: `rn-${assignTarget.tmr_id}-assign-${Date.now()}`,
@@ -98,23 +105,29 @@ export function TMRs() {
       created_at: new Date().toISOString(),
     }
 
-    setTmrs((prev) =>
-      prev.map((t) =>
-        t.tmr_id === assignTarget.tmr_id
-          ? {
-              ...t,
-              assigned_to: aceId,
-              status: 'Pending Review',
-              review_notes: [...t.review_notes, reviewNote],
-            }
-          : t,
-      ),
-    )
+    const updated: TMR = {
+      ...assignTarget,
+      assigned_to: aceId,
+      status: 'Pending Review',
+      review_notes: [...assignTarget.review_notes, reviewNote],
+    }
+    setTmrOverrides((prev) => new Map(prev).set(assignTarget.tmr_id, updated))
     setAssignTarget(null)
   }
 
   const handleUpdateTmr = (updated: TMR) => {
-    setTmrs((prev) => prev.map((t) => (t.tmr_id === updated.tmr_id ? updated : t)))
+    setTmrOverrides((prev) => new Map(prev).set(updated.tmr_id, updated))
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <Header title="TMR Review" subtitle="Loading..." />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="animate-spin h-8 w-8 border-4 border-snow-500 border-t-transparent rounded-full" />
+        </div>
+      </div>
+    )
   }
 
   const kpiCards: { label: string; value: number; icon: React.ReactNode; className: string }[] = [

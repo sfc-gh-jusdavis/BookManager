@@ -1,0 +1,965 @@
+---
+# Security & Network Feature Milestone Framework
+# Machine-readable reference for ACE platform security milestone detection
+# Version: 1.0
+# Last Updated: 2026-04-15
+#
+# This file defines 16 security milestones across 3 tiers.
+# Each milestone includes:
+#   - Detection signals (SQL queries against Snowhouse tables)
+#   - Evaluation criteria (thresholds, scoring)
+#   - Industry-specific weights and recommendations
+#   - Open questions the platform should ask the ACE
+#
+# The ACE platform uses this to:
+#   1. Scan quantitative signals for a target account
+#   2. Enrich with qualitative context (industry, SE comments, Gong)
+#   3. Identify gaps (milestones NOT met that SHOULD be)
+#   4. Pose open questions to the ACE about unknowns
+#   5. Accept ACE feedback (in progress / not applicable / planned)
+#   6. Generate prioritized next steps
+
+metadata:
+  framework_name: "Security & Network Feature Milestones"
+  version: "1.0"
+  tiers:
+    - id: identity_access
+      name: "Identity & Access Foundations"
+      description: "Authentication, federation, and user lifecycle management"
+      milestones: [sso, sso_provider, scim, mfa, service_user_auth]
+    - id: network_data_protection
+      name: "Network & Data Protection"
+      description: "Network security, encryption, masking, and data access controls"
+      milestones: [network_policies, privatelink, ddm, row_access, tag_masking, tri_secret, data_classification]
+    - id: rbac_governance
+      name: "RBAC & Governance"
+      description: "Role-based access control anti-patterns and governance posture"
+      milestones: [accountadmin_sprawl, role_hierarchy, ownership_concentration, trust_center]
+
+# ---------------------------------------------------------------------------
+# DATA SOURCES
+# ---------------------------------------------------------------------------
+data_sources:
+
+  security_health:
+    table: "SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY"
+    grain: "DS x DEPLOYMENT x ACCOUNT_ID"
+    refresh: "Daily"
+    key_columns:
+      - HAS_SSO_CONFIGURED
+      - HAS_SCIM_INTEGRATION
+      - HAS_HUMAN_MFA_READY
+      - HAS_SERVICE_USERS_STRONG_AUTH
+      - HAS_NETWORK_POLICY_CONFIGURED
+      - HAS_PRIVATELINK_INBOUND
+      - HAS_PRIVATELINK_OUTBOUND
+      - HAS_TRI_SECRET_SECURE
+      - HAS_TRUST_CENTER_PACKAGES_ENABLED
+      - SERVICE_LEVEL
+      - AGREEMENT_TYPE
+      - SALESFORCE_ACCOUNT_NAME
+      - ORGANIZATION_ID
+      - ADVANCED_MATURITY_SCORE
+      - HIGHLY_MATURE_MATURITY_SCORE
+    filter: "DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)"
+
+  daily_user_health:
+    table: "SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH"
+    grain: "DS x DEPLOYMENT x ACCOUNT_ID x USER_ID"
+    refresh: "Daily"
+    key_columns:
+      - IDP_INTEGRATED
+      - HAS_SAML_IDENTITY_PARAM
+      - NP_PRESENT_ACCT_LEVEL
+      - FEDERATED_AUTH
+      - HEALTHY
+      - SALESFORCE_ACCOUNT_ID
+    filter: "DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH)"
+
+  governed_accounts:
+    table: "SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS"
+    grain: "DS x DEPLOYMENT x ACCOUNT_ID"
+    refresh: "Daily"
+    key_columns:
+      - MASKING_POLICIES
+      - ROW_ACCESS_POLICIES
+      - TBM_POLICIES
+      - ASSIGNED_TAGS
+      - TOTAL_MASKING_POLICIES
+    filter: "DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS)"
+
+  network_policies:
+    table: "SNOWSCIENCE.DB_SECURITY.NETWORK_POLICIES"
+    grain: "DS x DEPLOYMENT x ACCOUNT_ID x POLICY_ID"
+    refresh: "Daily"
+    key_columns:
+      - NAME
+      - ALLOWED_IP_LIST
+      - BLOCKED_IP_LIST
+      - HAS_NETWORK_RULE
+      - CREATED_ON
+      - DELETED_ON
+
+  admin_users:
+    table: "SALES.CX_INSIGHTS.V_SF_ADMIN_CURR"
+    grain: "DEPLOYMENT x ACCOUNT_ID x USER_ID"
+    refresh: "Current snapshot"
+    key_columns:
+      - ACCOUNT_ADMIN
+      - SYS_ADMIN
+      - SECURITY_ADMIN
+      - ORG_ADMIN
+      - IS_HEALTHY
+      - HAS_MFA
+      - HAS_SAML_IDENTITY
+      - USER_TYPE
+      - SFDC_CUST_ID
+
+  role_hierarchy:
+    table: "SALES.CX_INSIGHTS.V_SF_ROLES_CURR"
+    grain: "DEPLOYMENT x ACCOUNT_ID x ROLE_ID"
+    refresh: "Current snapshot"
+    key_columns:
+      - SF_ROLE_ID
+      - SF_PARENT_ROLE_ID
+      - SF_ROLE_NAME
+
+  role_grants:
+    table: "SALES.CX_INSIGHTS.V_SF_ROLE_GRANT_CURR"
+    grain: "DEPLOYMENT x ACCOUNT_ID x GRANTEE_ROLE_ID x GRANTOR_ROLE_ID"
+    refresh: "Current snapshot"
+
+  customer_profile:
+    table: "SALES.CX_INSIGHTS.V_CUST_CURR"
+    grain: "SFDC_CUST_ID"
+    refresh: "Current snapshot"
+    key_columns:
+      - CUST_INDUSTRY
+      - CUST_DESC
+      - AGREEMENT
+      - CREDIT_SEGMENT_DESC
+      - SE_NAME
+      - AE_NAME
+      - CAPACITY_TENURE_YEARS
+
+  # Qualitative context sources
+  se_comments:
+    table: "FIVETRAN.SALESFORCE.USE_CASE_C"
+    grain: "USE_CASE_ID"
+    key_columns:
+      - USE_CASE_COMMENTS_C
+      - SPECIALIST_COMMENTS_C
+      - IMPLEMENTATION_COMMENTS_C
+      - PARTNER_COMMENTS_C
+      - USE_CASE_NEXT_STAGE_COMMENTS_C
+      - ACCOUNT_ID_C
+      - NAME_C
+    filter: "NOT IS_DELETED"
+    notes: "USE_CASE_COMMENTS_C contains timestamped SE diary entries (e.g., '2026-04-15 - BHill - customer discussed PrivateLink...')"
+
+  gong_calls:
+    table: "FIVETRAN.SALESFORCE.GONG_GONG_CALL_C"
+    grain: "GONG_CALL_ID_C"
+    row_count: 170000
+    key_columns:
+      - GONG_CALL_BRIEF_C
+      - GONG_CALL_KEY_POINTS_C
+      - GONG_CALL_HIGHLIGHTS_NEXT_STEPS_C
+      - GONG_RELATED_TOPICS_JSON_C
+      - GONG_RELATED_TRACKERS_JSON_C
+      - GONG_RELATED_ACTION_ITEMS_JSON_C
+      - GONG_RELATED_NOTES_JSON_C
+      - GONG_PRIMARY_ACCOUNT_C
+      - GONG_CALL_START_C
+    filter: "NOT IS_DELETED"
+
+  account_notes:
+    table: "SALES.RAVEN.USE_CASE_EXPLORER_ACCOUNT"
+    grain: "SFDC_ACCOUNT_ID"
+    key_columns:
+      - AE_FIELD_NOTES_C
+      - CUSTOMER_SUCCESS_NOTES_C
+      - SUPPORT_NOTES_C
+      - SALES_DIRECTOR_NOTES_C
+      - ACCOUNT_RISK_C
+      - ACCOUNT_RISK_MITIGATION_STEPS_C
+      - CONSUMPTION_RISK_C
+      - CONSUMPTION_RISK_MITIGATION_STEPS_C
+      - RENEWAL_RISK_C
+      - RENEWAL_RISK_DESCRIPTION_C
+
+  compliance_signals:
+    table: "FIVETRAN.SALESFORCE.ACCOUNT"
+    grain: "SFDC_ACCOUNT_ID"
+    key_columns:
+      - INDUSTRY
+      - INDUSTRY_C
+      - KEY_VERTICALS_C
+      - THIRD_PARTY_COMPLIANCE_LIFT_NUMBER_C
+      - THIRD_PARTY_COMPLIANCE_LIFT_TICKET_C
+      - SECURITY_PARTNER_SPECIALIZATION_C
+      - USE_CASE_SUMMARY_C
+      - PREDICTED_USE_CASES_C
+      - PREDICTED_PRODUCT_USE_CASE_C
+
+# ---------------------------------------------------------------------------
+# INDUSTRY PROFILES
+# ---------------------------------------------------------------------------
+industry_profiles:
+
+  financial_services:
+    label: "Financial Services"
+    compliance_frameworks: [SOC2, PCI-DSS, SOX, GLBA, FFIEC]
+    required_milestones: [sso, mfa, network_policies, privatelink, ddm, row_access, tri_secret, data_classification, trust_center]
+    recommended_milestones: [scim, tag_masking, service_user_auth]
+    privatelink_expectation: "Required for production data if Business Critical"
+    masking_expectation: "All PII, PCI, and financial data columns must be masked"
+    rbac_expectation: "Strict separation of duties; no shared ACCOUNTADMIN access"
+
+  healthcare:
+    label: "Healthcare & Life Sciences"
+    compliance_frameworks: [HIPAA, HITRUST, SOC2, FDA-21-CFR-Part-11]
+    required_milestones: [sso, mfa, network_policies, ddm, row_access, data_classification, trust_center]
+    recommended_milestones: [privatelink, scim, tag_masking, tri_secret, service_user_auth]
+    privatelink_expectation: "Strongly recommended for PHI workloads"
+    masking_expectation: "All PHI columns must be masked; row-level access for multi-department views"
+    rbac_expectation: "Minimum necessary access principle; audit trail required"
+
+  public_sector:
+    label: "Public Sector & Government"
+    compliance_frameworks: [FedRAMP, FISMA, NIST-800-53, ITAR, CJIS]
+    required_milestones: [sso, mfa, network_policies, privatelink, ddm, tri_secret, trust_center, service_user_auth]
+    recommended_milestones: [scim, row_access, tag_masking, data_classification]
+    privatelink_expectation: "Required for FedRAMP compliance"
+    masking_expectation: "Classified and CUI data must be masked at column and row level"
+    rbac_expectation: "Zero trust model; strict role separation mandated by regulation"
+
+  retail_consumer:
+    label: "Retail & Consumer Goods"
+    compliance_frameworks: [PCI-DSS, CCPA, GDPR, SOC2]
+    required_milestones: [sso, mfa, ddm, data_classification]
+    recommended_milestones: [network_policies, scim, row_access, tag_masking, trust_center, service_user_auth]
+    privatelink_expectation: "Recommended for payment and PII workloads"
+    masking_expectation: "PCI cardholder data and PII (CCPA/GDPR) must be masked"
+    rbac_expectation: "Separate analytics roles from production data roles"
+
+  technology:
+    label: "Technology & Software"
+    compliance_frameworks: [SOC2, ISO-27001, GDPR]
+    required_milestones: [sso, mfa, service_user_auth]
+    recommended_milestones: [network_policies, scim, ddm, row_access, data_classification, trust_center]
+    privatelink_expectation: "Recommended for multi-tenant SaaS providers"
+    masking_expectation: "Customer data isolation; PII masking for GDPR"
+    rbac_expectation: "Team-based access patterns; CI/CD service accounts should use key-pair auth"
+
+  manufacturing:
+    label: "Manufacturing & Industrial"
+    compliance_frameworks: [SOC2, ITAR, ISO-27001]
+    required_milestones: [sso, mfa, network_policies]
+    recommended_milestones: [ddm, scim, data_classification, trust_center, service_user_auth]
+    privatelink_expectation: "Recommended for ITAR or defense-adjacent workloads"
+    masking_expectation: "IP and trade secret data should be protected via masking"
+    rbac_expectation: "Functional role separation; production vs analytics environments"
+
+  default:
+    label: "General / Unknown Industry"
+    compliance_frameworks: [SOC2]
+    required_milestones: [sso, mfa]
+    recommended_milestones: [network_policies, scim, ddm, data_classification, trust_center, service_user_auth]
+    privatelink_expectation: "Depends on data sensitivity and Business Critical status"
+    masking_expectation: "Any PII or sensitive data should be masked"
+    rbac_expectation: "Follow Snowflake RBAC best practices"
+
+# ---------------------------------------------------------------------------
+# MILESTONES
+# ---------------------------------------------------------------------------
+milestones:
+
+  # --- TIER 1: Identity & Access Foundations ---
+
+  sso:
+    id: "sso"
+    name: "SSO / Federation"
+    tier: identity_access
+    priority: critical
+    description: "Single Sign-On configured so all human users authenticate via an identity provider rather than Snowflake-native passwords."
+    best_practice: |
+      All human users should authenticate via SSO (SAML 2.0 or native OAuth).
+      Password-only authentication should be disabled for human users.
+      SSO provides centralized identity management, enforces organizational MFA policies,
+      and enables automatic deprovisioning when users leave the organization.
+    why_it_matters: |
+      Without SSO, user credentials are managed independently in Snowflake, creating
+      risk of stale accounts, weak passwords, and inability to enforce organizational
+      security policies. SSO is the foundation for zero-trust access.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_SSO_CONFIGURED
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_SSO_CONFIGURED"
+      pass_condition: "HAS_SSO_CONFIGURED = TRUE"
+    evaluation:
+      status_levels:
+        not_started: "No SSO integration detected"
+        partial: "SSO configured but not all human users federated"
+        complete: "SSO configured and all human users authenticate via SSO"
+      secondary_signals:
+        - source: daily_user_health
+          sql: |
+            SELECT 
+              COUNT(*) AS TOTAL_USERS,
+              SUM(CASE WHEN FEDERATED_AUTH != 'NO FED AUTH' THEN 1 ELSE 0 END) AS FEDERATED_USERS,
+              ROUND(FEDERATED_USERS / NULLIF(TOTAL_USERS, 0) * 100, 1) AS FEDERATED_PCT
+            FROM SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH
+            WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH)
+              AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+          interpretation: "FEDERATED_PCT > 90% = complete, 50-90% = partial, < 50% = not_started"
+    open_questions:
+      - question: "Is the customer actively planning or evaluating SSO integration?"
+        context: "No SSO detected on this account. Understanding if this is a known gap or intentional."
+        triggers_when: "HAS_SSO_CONFIGURED = FALSE"
+      - question: "Are there specific users who cannot be federated (service accounts, legacy integrations)?"
+        context: "SSO is configured but some users still use password-only auth."
+        triggers_when: "FEDERATED_PCT < 95"
+
+  sso_provider:
+    id: "sso_provider"
+    name: "SSO Provider Identification"
+    tier: identity_access
+    priority: informational
+    description: "Identifies the specific identity provider (Entra ID, Okta, Ping, etc.) to align security architecture recommendations."
+    best_practice: |
+      Knowing the IdP enables provider-specific configuration guidance.
+      Entra ID (Azure AD) customers should leverage native Snowflake Entra integration.
+      Okta customers should use Snowflake's SAML 2.0 or native Okta SCIM connector.
+    detection:
+      primary_source: daily_user_health
+      sql: |
+        SELECT DISTINCT IDP_INTEGRATED::VARCHAR AS IDP_NAME
+        FROM SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.DAILY_USER_HEALTH)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+          AND IDP_INTEGRATED IS NOT NULL
+          AND ARRAY_SIZE(IDP_INTEGRATED) > 0
+      patterns:
+        entra_id:
+          match: "IDP_NAME ILIKE '%ENTRA%' OR IDP_NAME ILIKE '%AZURE_AD%' OR IDP_NAME ILIKE '%AZUREAD%'"
+          label: "Microsoft Entra ID (Azure AD)"
+        okta:
+          match: "IDP_NAME ILIKE '%OKTA%'"
+          label: "Okta"
+        ping:
+          match: "IDP_NAME ILIKE '%PING%'"
+          label: "Ping Identity"
+        onelogin:
+          match: "IDP_NAME ILIKE '%ONELOGIN%'"
+          label: "OneLogin"
+        generic_saml:
+          match: "IDP_NAME ILIKE '%SAML%'"
+          label: "Generic SAML Provider"
+    open_questions:
+      - question: "Which identity provider does the customer use? We detected integration names but want to confirm."
+        context: "Accurate IdP identification enables targeted configuration recommendations."
+        triggers_when: "No IDP_INTEGRATED values found or ambiguous naming"
+
+  scim:
+    id: "scim"
+    name: "SCIM Provisioning"
+    tier: identity_access
+    priority: high
+    description: "System for Cross-domain Identity Management (SCIM) integration for automated user lifecycle management."
+    best_practice: |
+      SCIM automates user provisioning and deprovisioning from the identity provider.
+      This eliminates manual user management, reduces stale account risk, and ensures
+      users are deprovisioned immediately when they leave the organization.
+      SCIM should be configured alongside SSO for complete identity lifecycle management.
+    why_it_matters: |
+      Without SCIM, user accounts must be manually created and removed in Snowflake.
+      Orphaned accounts (users who left the org but still have active Snowflake accounts)
+      are a significant security risk and compliance finding.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_SCIM_INTEGRATION
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_SCIM_INTEGRATION"
+      pass_condition: "HAS_SCIM_INTEGRATION = TRUE"
+    evaluation:
+      status_levels:
+        not_started: "No SCIM integration detected"
+        complete: "SCIM integration active"
+    open_questions:
+      - question: "Is automated user provisioning/deprovisioning in place? SCIM is not detected."
+        context: "Manual user management creates risk of orphaned accounts. Is SCIM planned?"
+        triggers_when: "HAS_SCIM_INTEGRATION = FALSE AND HAS_SSO_CONFIGURED = TRUE"
+      - question: "Does the customer manage user lifecycle manually, or is there another automation mechanism?"
+        context: "SSO is not configured either, so SCIM may not be the immediate priority."
+        triggers_when: "HAS_SCIM_INTEGRATION = FALSE AND HAS_SSO_CONFIGURED = FALSE"
+
+  mfa:
+    id: "mfa"
+    name: "MFA Enforcement"
+    tier: identity_access
+    priority: critical
+    description: "Multi-factor authentication required for all human users, especially those with elevated roles."
+    best_practice: |
+      MFA should be enforced at the account level for all human users.
+      At minimum, all ACCOUNTADMIN, SYSADMIN, and SECURITYADMIN users must have MFA.
+      Snowflake supports Duo MFA natively and external MFA via SSO provider.
+      Account-level MFA policies (authentication policies) are preferred over user-level.
+    why_it_matters: |
+      MFA is the single most effective control against credential theft and unauthorized access.
+      Snowflake accounts without MFA are vulnerable to credential stuffing, phishing,
+      and password reuse attacks. Regulatory frameworks universally require MFA.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_HUMAN_MFA_READY
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_HUMAN_MFA_READY"
+      pass_condition: "HAS_HUMAN_MFA_READY = TRUE"
+    evaluation:
+      status_levels:
+        not_started: "MFA not enforced"
+        partial: "MFA enforced but not all admin users compliant"
+        complete: "MFA enforced for all human users"
+      secondary_signals:
+        - source: admin_users
+          sql: |
+            SELECT
+              COUNT(*) AS TOTAL_ADMINS,
+              SUM(CASE WHEN HAS_MFA = 'HAS MFA' THEN 1 ELSE 0 END) AS MFA_ADMINS,
+              SUM(CASE WHEN HAS_MFA = 'NO MFA' AND ACCOUNT_ADMIN = 'YES' THEN 1 ELSE 0 END) AS ACCOUNTADMIN_NO_MFA
+            FROM SALES.CX_INSIGHTS.V_SF_ADMIN_CURR
+            WHERE SF_ACCT_ID = :account_id AND SF_DEPLOYMENT = :deployment
+          interpretation: "ACCOUNTADMIN_NO_MFA > 0 is a critical finding"
+    open_questions:
+      - question: "Are there ACCOUNTADMIN users without MFA? This is a critical security gap."
+        context: "Detected admin users without MFA. Is there a remediation timeline?"
+        triggers_when: "ACCOUNTADMIN_NO_MFA > 0"
+
+  service_user_auth:
+    id: "service_user_auth"
+    name: "Service User Strong Authentication"
+    tier: identity_access
+    priority: high
+    description: "Service accounts (non-human users) authenticate via key-pair or OAuth instead of passwords."
+    best_practice: |
+      Service accounts should use RSA key-pair authentication or OAuth client credentials.
+      Password-based service accounts should be eliminated.
+      Snowflake TYPE = 'SERVICE' or TYPE = 'LEGACY_SERVICE' user types should be used
+      for non-human accounts, which cannot enroll in MFA.
+      Key rotation should be implemented on a regular schedule.
+    why_it_matters: |
+      Service accounts with passwords are high-value targets - they often have broad
+      permissions and their credentials may be stored in configuration files, CI/CD
+      pipelines, or shared across teams. Key-pair auth eliminates password exposure risk.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_SERVICE_USERS_STRONG_AUTH
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_SERVICE_USERS_STRONG_AUTH"
+      pass_condition: "HAS_SERVICE_USERS_STRONG_AUTH = TRUE"
+    open_questions:
+      - question: "How does the customer authenticate service accounts (ETL tools, BI tools, CI/CD)?"
+        context: "Service user strong auth is not fully implemented. Are there known password-based service accounts?"
+        triggers_when: "HAS_SERVICE_USERS_STRONG_AUTH = FALSE"
+
+  # --- TIER 2: Network & Data Protection ---
+
+  network_policies:
+    id: "network_policies"
+    name: "Network Policies"
+    tier: network_data_protection
+    priority: high
+    description: "IP allow/block lists configured to restrict Snowflake access to known network ranges."
+    best_practice: |
+      Network policies should restrict access to known corporate IP ranges, VPN egress points,
+      and approved cloud service CIDR blocks. At minimum, an account-level network policy
+      should be configured. Network rules (newer feature) provide more granular control
+      including private endpoint restrictions. User-level network policies can further
+      restrict sensitive admin accounts.
+    why_it_matters: |
+      Without network policies, Snowflake accounts are accessible from any IP address.
+      Network policies provide defense-in-depth by limiting the attack surface to
+      known, trusted network locations. This is a foundational security control.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_NETWORK_POLICY_CONFIGURED
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_NETWORK_POLICY_CONFIGURED"
+      pass_condition: "HAS_NETWORK_POLICY_CONFIGURED = TRUE"
+    evaluation:
+      secondary_signals:
+        - source: network_policies
+          sql: |
+            SELECT
+              COUNT(*) AS POLICY_COUNT,
+              SUM(CASE WHEN HAS_NETWORK_RULE THEN 1 ELSE 0 END) AS POLICIES_WITH_NETWORK_RULES,
+              MIN(CREATED_ON) AS FIRST_POLICY_CREATED
+            FROM SNOWSCIENCE.DB_SECURITY.NETWORK_POLICIES
+            WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.NETWORK_POLICIES)
+              AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+              AND DELETED_ON IS NULL
+          interpretation: "POLICY_COUNT > 0 = basic, POLICIES_WITH_NETWORK_RULES > 0 = advanced"
+    open_questions:
+      - question: "Are there corporate IP ranges or VPN egress IPs that should be allowlisted?"
+        context: "No network policy detected. Any IP can currently access this Snowflake account."
+        triggers_when: "HAS_NETWORK_POLICY_CONFIGURED = FALSE"
+      - question: "Are user-level network policies needed for admin accounts?"
+        context: "Account-level policy exists. Consider tighter restrictions for ACCOUNTADMIN users."
+        triggers_when: "HAS_NETWORK_POLICY_CONFIGURED = TRUE AND POLICY_COUNT = 1"
+
+  privatelink:
+    id: "privatelink"
+    name: "PrivateLink / Private Connectivity"
+    tier: network_data_protection
+    priority: high
+    description: "Private network connectivity to Snowflake via AWS PrivateLink, Azure Private Link, or GCP Private Service Connect."
+    best_practice: |
+      Business Critical accounts should use PrivateLink for all production traffic.
+      PrivateLink ensures traffic between the customer VPC/VNet and Snowflake never
+      traverses the public internet. Both inbound (client to Snowflake) and outbound
+      (Snowflake to customer services) PrivateLink should be considered.
+      PrivateLink is only available on Business Critical edition or higher.
+    why_it_matters: |
+      PrivateLink eliminates exposure of data in transit to the public internet.
+      For regulated industries and sensitive data workloads, private connectivity
+      is often a compliance requirement. It also simplifies network security by
+      removing the need for complex firewall rules.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, SERVICE_LEVEL,
+               HAS_PRIVATELINK_INBOUND, HAS_PRIVATELINK_OUTBOUND
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_PRIVATELINK_INBOUND"
+      pass_condition: "HAS_PRIVATELINK_INBOUND = TRUE"
+      prerequisite: "SERVICE_LEVEL IN ('Business Critical', 'VPS')"
+    evaluation:
+      status_levels:
+        not_applicable: "Account is not Business Critical edition"
+        not_started: "Business Critical but no PrivateLink configured"
+        partial: "Inbound OR outbound PrivateLink configured (not both)"
+        complete: "Both inbound and outbound PrivateLink configured"
+    open_questions:
+      - question: "Is PrivateLink connectivity planned? This BC account has no private connectivity."
+        context: "Business Critical edition supports PrivateLink but it is not configured. Is there a known blocker (network team, cloud architecture)?"
+        triggers_when: "SERVICE_LEVEL = 'Business Critical' AND HAS_PRIVATELINK_INBOUND = FALSE"
+      - question: "Should this account be upgraded to Business Critical for PrivateLink support?"
+        context: "Account is Enterprise edition. PrivateLink requires Business Critical."
+        triggers_when: "SERVICE_LEVEL != 'Business Critical' AND industry_requires_privatelink"
+
+  ddm:
+    id: "ddm"
+    name: "Dynamic Data Masking"
+    tier: network_data_protection
+    priority: high
+    description: "Column-level masking policies applied to protect sensitive data (PII, PCI, PHI) from unauthorized access."
+    best_practice: |
+      Sensitive columns should be protected with masking policies that return
+      masked values to unauthorized roles. Masking should be applied based on
+      data classification results. Common patterns include full masking (return NULL
+      or fixed string), partial masking (show last 4 digits), and conditional masking
+      (unmask for specific roles). Policies should use CURRENT_ROLE() or IS_ROLE_IN_SESSION()
+      for role-based access decisions.
+    why_it_matters: |
+      Without masking, any user with SELECT access to a table can see all column values
+      including sensitive data. Masking enforces column-level security independent of
+      table grants, providing defense-in-depth for sensitive data.
+    detection:
+      primary_source: governed_accounts
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, MASKING_POLICIES, TOTAL_MASKING_POLICIES
+        FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "MASKING_POLICIES"
+      pass_condition: "MASKING_POLICIES > 0"
+    evaluation:
+      status_levels:
+        not_started: "No masking policies detected"
+        partial: "Some masking policies exist but coverage may be incomplete"
+        complete: "Masking policies applied comprehensively across sensitive data"
+      thresholds:
+        minimal: "MASKING_POLICIES >= 1"
+        moderate: "MASKING_POLICIES >= 5"
+        comprehensive: "MASKING_POLICIES >= 10 AND TOTAL_MASKING_POLICIES >= 20"
+    open_questions:
+      - question: "Has the customer identified which columns contain sensitive data (PII, PCI, PHI)?"
+        context: "No masking policies detected. Data classification should precede masking implementation."
+        triggers_when: "MASKING_POLICIES = 0"
+      - question: "Is the current masking coverage sufficient? We detect policies but coverage may be incomplete."
+        context: "Some masking exists. Has the customer run Snowflake data classification to find unprotected sensitive columns?"
+        triggers_when: "MASKING_POLICIES > 0 AND MASKING_POLICIES < 10"
+
+  row_access:
+    id: "row_access"
+    name: "Row Access Policies"
+    tier: network_data_protection
+    priority: medium
+    description: "Row-level security policies that filter table rows based on the querying user's role or attributes."
+    best_practice: |
+      Row access policies should be applied to multi-tenant tables, tables with
+      department-level data, or any table where different users should see different
+      subsets of rows. Policies should use mapping tables to determine which roles
+      can see which rows, rather than hardcoding role names. Row access policies
+      are particularly important for shared data environments and data products.
+    why_it_matters: |
+      Without row access policies, granting SELECT on a table gives access to ALL rows.
+      Row-level security enables fine-grained access control without creating separate
+      tables or views per department/region/tenant.
+    detection:
+      primary_source: governed_accounts
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, ROW_ACCESS_POLICIES
+        FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "ROW_ACCESS_POLICIES"
+      pass_condition: "ROW_ACCESS_POLICIES > 0"
+    open_questions:
+      - question: "Does the customer have multi-tenant data or department-level access requirements?"
+        context: "No row access policies detected. Row-level security may or may not be needed depending on data architecture."
+        triggers_when: "ROW_ACCESS_POLICIES = 0"
+
+  tag_masking:
+    id: "tag_masking"
+    name: "Tag-Based Masking"
+    tier: network_data_protection
+    priority: medium
+    description: "Scalable masking via object tags - masking policies are assigned to tags rather than individual columns."
+    best_practice: |
+      Tag-based masking scales better than per-column masking for large environments.
+      Tags are assigned to columns based on data classification, and masking policies
+      are attached to tags. When new columns are tagged, they automatically inherit
+      the masking policy. This is the recommended approach for organizations with
+      hundreds or thousands of sensitive columns.
+    why_it_matters: |
+      Manual per-column masking becomes unmanageable at scale. Tag-based masking
+      automates policy application based on data classification, ensuring new
+      sensitive columns are automatically protected.
+    detection:
+      primary_source: governed_accounts
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, TBM_POLICIES, ASSIGNED_TAGS
+        FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "TBM_POLICIES"
+      pass_condition: "TBM_POLICIES > 0"
+    open_questions:
+      - question: "Has the customer considered tag-based masking for scalable data protection?"
+        context: "DDM exists but no tag-based masking. For environments with many sensitive columns, tags provide automation."
+        triggers_when: "TBM_POLICIES = 0 AND MASKING_POLICIES > 5"
+
+  tri_secret:
+    id: "tri_secret"
+    name: "Tri-Secret Secure"
+    tier: network_data_protection
+    priority: medium
+    description: "Customer-managed encryption keys (CMEK) via Tri-Secret Secure for data-at-rest encryption."
+    best_practice: |
+      Tri-Secret Secure provides customer control over encryption keys used for
+      data at rest. The customer maintains a key in their cloud provider's KMS
+      (AWS KMS, Azure Key Vault, GCP KMS). Snowflake combines this with its own
+      key to create a composite key. If the customer revokes their key, Snowflake
+      cannot decrypt the data. Only available on Business Critical edition.
+    why_it_matters: |
+      Tri-Secret Secure provides an additional layer of control - the customer can
+      revoke access to their data at any time by disabling their encryption key.
+      This is required by some compliance frameworks and security-conscious organizations.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, SERVICE_LEVEL, HAS_TRI_SECRET_SECURE
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_TRI_SECRET_SECURE"
+      pass_condition: "HAS_TRI_SECRET_SECURE = TRUE"
+      prerequisite: "SERVICE_LEVEL IN ('Business Critical', 'VPS')"
+    open_questions:
+      - question: "Does the customer require customer-managed encryption keys for compliance?"
+        context: "Tri-Secret Secure is not enabled on this BC account. Some regulated industries require CMEK."
+        triggers_when: "SERVICE_LEVEL = 'Business Critical' AND HAS_TRI_SECRET_SECURE = FALSE"
+
+  data_classification:
+    id: "data_classification"
+    name: "Data Classification"
+    tier: network_data_protection
+    priority: medium
+    description: "Automated sensitive data discovery and classification using Snowflake's built-in classification."
+    best_practice: |
+      Run SYSTEM$CLASSIFY on tables to automatically identify columns containing
+      sensitive data (PII, PCI, PHI). Classification results should drive masking
+      and tagging policies. Classification should be run periodically as new data
+      arrives. Results are stored as system tags that can drive tag-based masking.
+    why_it_matters: |
+      You cannot protect what you do not know about. Classification provides an
+      inventory of sensitive data, which is prerequisite for effective masking,
+      access control, and compliance reporting.
+    detection:
+      primary_source: governed_accounts
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, ASSIGNED_TAGS
+        FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DATA_GOVERNANCE.GOVERNED_ACCOUNTS)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "ASSIGNED_TAGS"
+      pass_condition: "ASSIGNED_TAGS > 0"
+    open_questions:
+      - question: "Has the customer run data classification to identify sensitive columns?"
+        context: "No classification tags detected. Classification should precede masking policy implementation."
+        triggers_when: "ASSIGNED_TAGS = 0 AND MASKING_POLICIES = 0"
+
+  # --- TIER 3: RBAC & Governance ---
+
+  accountadmin_sprawl:
+    id: "accountadmin_sprawl"
+    name: "ACCOUNTADMIN Sprawl"
+    tier: rbac_governance
+    priority: critical
+    description: "Detects excessive ACCOUNTADMIN role grants - a common and dangerous RBAC anti-pattern."
+    best_practice: |
+      ACCOUNTADMIN should be granted to a maximum of 3-5 users in most organizations.
+      These should be designated platform administrators, not general users.
+      ACCOUNTADMIN users should have MFA enforced and should rarely use this role
+      for day-to-day operations. Use SYSADMIN for object management and SECURITYADMIN
+      for access management. The principle of least privilege should always apply.
+    why_it_matters: |
+      ACCOUNTADMIN has unrestricted access to everything in the account. Every
+      additional ACCOUNTADMIN user increases the attack surface. If any of these
+      credentials are compromised, the attacker has full control. Excessive
+      ACCOUNTADMIN grants often indicate a culture of convenience over security.
+    detection:
+      primary_source: admin_users
+      sql: |
+        SELECT
+          SFDC_CUST_ID,
+          SF_ACCT_ID,
+          COUNT(*) AS TOTAL_ADMIN_USERS,
+          SUM(CASE WHEN ACCOUNT_ADMIN = 'YES' THEN 1 ELSE 0 END) AS ACCOUNTADMIN_COUNT,
+          SUM(CASE WHEN ACCOUNT_ADMIN = 'YES' AND HAS_MFA = 'NO MFA' THEN 1 ELSE 0 END) AS ACCOUNTADMIN_NO_MFA,
+          SUM(CASE WHEN SYS_ADMIN = 'YES' THEN 1 ELSE 0 END) AS SYSADMIN_COUNT,
+          SUM(CASE WHEN SECURITY_ADMIN = 'YES' THEN 1 ELSE 0 END) AS SECURITYADMIN_COUNT
+        FROM SALES.CX_INSIGHTS.V_SF_ADMIN_CURR
+        WHERE SF_ACCT_ID = :account_id AND SNOWFLAKE_DEPLOYMENT = :deployment
+        GROUP BY 1, 2
+      result_field: "ACCOUNTADMIN_COUNT"
+      pass_condition: "ACCOUNTADMIN_COUNT <= 5"
+    evaluation:
+      thresholds:
+        healthy: "ACCOUNTADMIN_COUNT <= 5"
+        warning: "ACCOUNTADMIN_COUNT BETWEEN 6 AND 15"
+        critical: "ACCOUNTADMIN_COUNT > 15"
+      critical_finding: "ACCOUNTADMIN_NO_MFA > 0"
+    open_questions:
+      - question: "There are {ACCOUNTADMIN_COUNT} users with ACCOUNTADMIN. Is there a plan to reduce this?"
+        context: "Snowflake best practice recommends 3-5 ACCOUNTADMIN users maximum. Each additional user increases risk."
+        triggers_when: "ACCOUNTADMIN_COUNT > 5"
+      - question: "CRITICAL: {ACCOUNTADMIN_NO_MFA} ACCOUNTADMIN users do not have MFA. What is the remediation timeline?"
+        context: "ACCOUNTADMIN without MFA is the highest-risk configuration. These accounts should have MFA immediately."
+        triggers_when: "ACCOUNTADMIN_NO_MFA > 0"
+
+  role_hierarchy:
+    id: "role_hierarchy"
+    name: "Role Hierarchy Under SYSADMIN"
+    tier: rbac_governance
+    priority: high
+    description: "Detects custom roles that are not granted to SYSADMIN, creating 'orphan' role hierarchies that bypass standard governance."
+    best_practice: |
+      All custom object-access roles should ultimately roll up to SYSADMIN in the
+      role hierarchy. SYSADMIN should be the top-level role for all object management.
+      Roles granted directly to ACCOUNTADMIN (bypassing SYSADMIN) create governance
+      gaps where SYSADMIN cannot manage those objects. The recommended hierarchy:
+        ACCOUNTADMIN
+          -> SYSADMIN (all custom object roles roll up here)
+          -> SECURITYADMIN (manages roles and grants)
+          -> USERADMIN (manages users)
+    why_it_matters: |
+      Orphan roles (not under SYSADMIN) mean that objects owned by those roles cannot
+      be managed by SYSADMIN. This creates blind spots in governance, complicates
+      access reviews, and can lead to data silos that are difficult to audit.
+    detection:
+      primary_source: role_hierarchy
+      sql: |
+        WITH RECURSIVE role_tree AS (
+          SELECT SF_ROLE_ID, SF_PARENT_ROLE_ID, SF_ROLE_NAME, 0 AS DEPTH
+          FROM SALES.CX_INSIGHTS.V_SF_ROLES_CURR
+          WHERE SF_ACCT_ID = :account_id AND SF_DEPLOYMENT = :deployment
+            AND SF_ROLE_NAME IN ('SYSADMIN')
+          UNION ALL
+          SELECT r.SF_ROLE_ID, r.SF_PARENT_ROLE_ID, r.SF_ROLE_NAME, rt.DEPTH + 1
+          FROM SALES.CX_INSIGHTS.V_SF_ROLES_CURR r
+          JOIN role_tree rt ON r.SF_PARENT_ROLE_ID = rt.SF_ROLE_ID
+          WHERE r.SF_ACCT_ID = :account_id AND r.SF_DEPLOYMENT = :deployment
+        )
+        SELECT
+          COUNT(*) AS TOTAL_ROLES,
+          SUM(CASE WHEN SF_ROLE_ID NOT IN (SELECT SF_ROLE_ID FROM role_tree)
+                    AND SF_ROLE_NAME NOT IN ('ACCOUNTADMIN','SYSADMIN','SECURITYADMIN','USERADMIN','ORGADMIN','PUBLIC')
+               THEN 1 ELSE 0 END) AS ORPHAN_ROLES
+        FROM SALES.CX_INSIGHTS.V_SF_ROLES_CURR
+        WHERE SF_ACCT_ID = :account_id AND SF_DEPLOYMENT = :deployment
+      result_field: "ORPHAN_ROLES"
+      pass_condition: "ORPHAN_ROLES = 0"
+    evaluation:
+      thresholds:
+        healthy: "ORPHAN_ROLES = 0"
+        warning: "ORPHAN_ROLES BETWEEN 1 AND 10"
+        critical: "ORPHAN_ROLES > 10"
+    open_questions:
+      - question: "There are {ORPHAN_ROLES} custom roles not under SYSADMIN. Is this intentional?"
+        context: "Roles outside the SYSADMIN hierarchy create governance gaps. These roles and their owned objects cannot be managed by SYSADMIN."
+        triggers_when: "ORPHAN_ROLES > 0"
+
+  ownership_concentration:
+    id: "ownership_concentration"
+    name: "Object Ownership Concentration"
+    tier: rbac_governance
+    priority: medium
+    description: "Detects when a large proportion of objects are owned by a single role, indicating lack of functional role separation."
+    best_practice: |
+      Objects should be owned by dedicated functional roles (e.g., ETL_ROLE, ANALYTICS_ROLE,
+      RAW_DATA_ROLE), not by SYSADMIN or ACCOUNTADMIN directly. Each data domain or
+      functional area should have its own object-ownership role. This enables granular
+      access control and clear accountability.
+    why_it_matters: |
+      When all objects are owned by one role (commonly SYSADMIN), it indicates a flat
+      permission model where access control is coarse-grained. This makes it impossible
+      to implement least-privilege access and complicates data governance.
+    detection:
+      primary_source: role_hierarchy
+      note: "Full detection requires ADHOC_TABLE_OWNERSHIP_BY_USER (282B rows - use with caution). The proxy signal below uses role count as an indicator."
+      sql: |
+        SELECT
+          COUNT(*) AS TOTAL_ROLES,
+          COUNT(DISTINCT SF_PARENT_ROLE_ID) AS DISTINCT_PARENT_ROLES
+        FROM SALES.CX_INSIGHTS.V_SF_ROLES_CURR
+        WHERE SF_ACCT_ID = :account_id AND SF_DEPLOYMENT = :deployment
+      interpretation: "TOTAL_ROLES < 10 with few parent roles suggests flat/concentrated ownership"
+    evaluation:
+      thresholds:
+        healthy: "TOTAL_ROLES >= 20 AND DISTINCT_PARENT_ROLES >= 3"
+        warning: "TOTAL_ROLES BETWEEN 10 AND 19"
+        critical: "TOTAL_ROLES < 10"
+    open_questions:
+      - question: "How many functional roles does the customer use for object ownership?"
+        context: "Only {TOTAL_ROLES} roles detected. A well-structured RBAC implementation typically has 20+ roles for object ownership across data domains."
+        triggers_when: "TOTAL_ROLES < 15"
+      - question: "Are objects primarily owned by SYSADMIN or ACCOUNTADMIN, or by dedicated functional roles?"
+        context: "Understanding ownership patterns helps determine if RBAC best practices are followed."
+        triggers_when: "DISTINCT_PARENT_ROLES < 3"
+
+  trust_center:
+    id: "trust_center"
+    name: "Trust Center"
+    tier: rbac_governance
+    priority: medium
+    description: "Snowflake Trust Center security scanners enabled for continuous security posture monitoring."
+    best_practice: |
+      Enable Trust Center scanner packages (Security Essentials, CIS Benchmark,
+      Threat Intelligence) to continuously monitor account security posture.
+      Trust Center provides automated detection of security misconfigurations,
+      suspicious activity, and compliance gaps. Findings should be reviewed
+      regularly and remediated based on severity.
+    why_it_matters: |
+      Trust Center automates the detection of security issues that would otherwise
+      require manual auditing. It provides continuous monitoring rather than
+      point-in-time assessments, catching configuration drift and emerging threats.
+    detection:
+      primary_source: security_health
+      sql: |
+        SELECT ACCOUNT_ID, DEPLOYMENT, HAS_TRUST_CENTER_PACKAGES_ENABLED
+        FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY
+        WHERE DS = (SELECT MAX(DS) FROM SNOWSCIENCE.DB_SECURITY.SECURITY_HEALTH_SCORE_DAILY)
+          AND ACCOUNT_ID = :account_id AND DEPLOYMENT = :deployment
+      result_field: "HAS_TRUST_CENTER_PACKAGES_ENABLED"
+      pass_condition: "HAS_TRUST_CENTER_PACKAGES_ENABLED = TRUE"
+    open_questions:
+      - question: "Is the customer aware of Snowflake Trust Center for automated security monitoring?"
+        context: "Trust Center scanners are not enabled. This is a free, built-in security monitoring capability."
+        triggers_when: "HAS_TRUST_CENTER_PACKAGES_ENABLED = FALSE"
+
+# ---------------------------------------------------------------------------
+# ACE INTERACTION PATTERN
+# ---------------------------------------------------------------------------
+ace_interaction:
+  description: |
+    The platform operates as a conversation loop between quantitative data and
+    ACE qualitative input. The goal is to build a complete picture of the customer's
+    security posture and create actionable, prioritized recommendations.
+
+  workflow:
+    - step: 1
+      name: "Quantitative Scan"
+      action: "Query all 16 milestones against data for the target account"
+      output: "Per-milestone status (not_started / partial / complete / not_applicable)"
+
+    - step: 2
+      name: "Context Enrichment"
+      action: "Pull industry, compliance signals, use cases, and recent SE comments / Gong calls"
+      sources:
+        - "SALES.CX_INSIGHTS.V_CUST_CURR -> industry, segment, tenure"
+        - "FIVETRAN.SALESFORCE.ACCOUNT -> compliance fields, use case summary"
+        - "FIVETRAN.SALESFORCE.USE_CASE_C -> USE_CASE_COMMENTS_C (recent SE notes)"
+        - "FIVETRAN.SALESFORCE.GONG_GONG_CALL_C -> recent call briefs and topics"
+        - "SALES.RAVEN.USE_CASE_EXPLORER_ACCOUNT -> AE notes, risk fields"
+      output: "Industry profile match, compliance requirements, qualitative context summary"
+
+    - step: 3
+      name: "Gap Identification"
+      action: "Compare milestone status against industry profile requirements"
+      logic: |
+        For each milestone in industry_profile.required_milestones:
+          if milestone.status == 'not_started':
+            flag as REQUIRED_GAP (high priority)
+        For each milestone in industry_profile.recommended_milestones:
+          if milestone.status == 'not_started':
+            flag as RECOMMENDED_GAP (medium priority)
+      output: "Prioritized gap list with industry-specific justification"
+
+    - step: 4
+      name: "Open Questions"
+      action: "Present targeted questions to the ACE based on detected gaps and unknowns"
+      behavior: |
+        For each gap, check the milestone's open_questions list.
+        Select questions where triggers_when condition is met.
+        Present questions grouped by priority (critical first).
+        Include context field so the ACE understands WHY the question is being asked.
+
+    - step: 5
+      name: "ACE Feedback"
+      action: "ACE provides answers and updates milestone status"
+      valid_responses:
+        - "in_progress: Customer is actively working on this (include timeline if known)"
+        - "not_applicable: Not needed for this customer (include reason)"
+        - "planned: On the roadmap but not started (include target quarter if known)"
+        - "blocked: Customer wants this but has a blocker (describe blocker)"
+        - "complete: Actually implemented but not detected by our data (rare)"
+
+    - step: 6
+      name: "Recommendations"
+      action: "Generate prioritized next steps based on all signals"
+      priority_order:
+        - "Critical gaps in required milestones (industry-specific)"
+        - "ACCOUNTADMIN users without MFA (always critical)"
+        - "High-priority gaps in required milestones"
+        - "Recommended milestones not yet started"
+        - "Partial implementations that could be completed"

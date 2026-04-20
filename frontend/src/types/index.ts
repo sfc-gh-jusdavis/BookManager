@@ -1,5 +1,12 @@
 export type UserRole = 'ace' | 'acem'
 
+export interface CreditDailyEntry {
+  account_id: string
+  date: string
+  credits_used: number
+  credits_allocated: number
+}
+
 export interface CurrentUser {
   user_id: string
   email: string

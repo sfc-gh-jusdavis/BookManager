@@ -23,3 +23,18 @@ class AccountFeatureUsage(BaseModel):
     first_used: Optional[date] = None
     last_used: Optional[date] = None
     measurement_period: str
+
+
+class AccountRevenueSummary(BaseModel):
+    account_id: str
+    contract_capacity: Optional[float] = None
+    total_consumed_revenue: Optional[float] = None
+    capacity_remaining: Optional[float] = None
+    total_consumed_credits: Optional[float] = None
+    pct_consumed: Optional[float] = None
+    predicted_overage_date: Optional[date] = None
+    last_actual_date: Optional[date] = None
+    contract_start_date: Optional[date] = None
+    contract_end_date: Optional[date] = None
+    wow_credits_pct_change: Optional[float] = None
+    mom_credits_pct_change: Optional[float] = None

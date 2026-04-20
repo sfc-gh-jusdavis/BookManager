@@ -1,14 +1,7 @@
 import { useState, useMemo, useCallback } from 'react'
 import { BarChart3, Target, TrendingUp, Layers } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { MOCK_ACCOUNTS } from '../mocks/accounts'
-import { MOCK_USE_CASES } from '../mocks/useCases'
-import {
-  MOCK_FORECASTS,
-  effectiveCategory,
-  getQuarters,
-  currentQuarter,
-} from '../mocks/forecasts'
+import { useAccounts, useUseCases, useForecasts } from '../api/hooks'
 import { ForecastTable } from '../components/forecasts/ForecastTable'
 import { AdjustModal } from '../components/forecasts/AdjustModal'
 import { PerformanceTiers } from '../components/forecasts/PerformanceTiers'
@@ -16,21 +9,44 @@ import { ForecastSummaryChart } from '../components/forecasts/ForecastSummaryCha
 import type { ForecastCategory, UseCase, UseCaseForecast } from '../types'
 import { isAceOnAccount } from '../utils/aceScoping'
 
+function effectiveCategory(f: UseCaseForecast): ForecastCategory {
+  return f.override_category ?? f.auto_category
+}
+
+function getQuarters(): string[] {
+  return ['Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026']
+}
+
+function currentQuarter(): string {
+  return 'Q2-2026'
+}
+
 export function Forecasts() {
   const { currentUser } = useAuth()
   const isManager = currentUser.role === 'acem'
 
+  const { data: accounts = [], isLoading: accountsLoading } = useAccounts()
+  const { data: allUseCases = [], isLoading: useCasesLoading } = useUseCases()
+  const { data: apiForecasts = [], isLoading: forecastsLoading } = useForecasts()
+
   const [quarter, setQuarter] = useState(currentQuarter)
-  const [forecasts, setForecasts] = useState(MOCK_FORECASTS)
+  const [forecastOverrides, setForecastOverrides] = useState<Map<string, UseCaseForecast>>(new Map())
+
+  const forecasts = useMemo(() => {
+    return apiForecasts.map((f) => {
+      const key = `${f.use_case_id}:${f.quarter}`
+      return forecastOverrides.get(key) ?? f
+    })
+  }, [apiForecasts, forecastOverrides])
 
   const [modalOpen, setModalOpen] = useState(false)
   const [modalForecast, setModalForecast] = useState<UseCaseForecast | null>(null)
   const [modalUseCase, setModalUseCase] = useState<UseCase | null>(null)
 
   const scopedAccounts = useMemo(() => {
-    if (isManager) return MOCK_ACCOUNTS
-    return MOCK_ACCOUNTS.filter((a) => isAceOnAccount(a, currentUser.user_id))
-  }, [isManager, currentUser.user_id])
+    if (isManager) return accounts
+    return accounts.filter((a) => isAceOnAccount(a, currentUser.user_id))
+  }, [accounts, isManager, currentUser.user_id])
 
   const scopedAccountIds = useMemo(
     () => new Set(scopedAccounts.map((a) => a.account_id)),
@@ -38,8 +54,8 @@ export function Forecasts() {
   )
 
   const scopedUseCases = useMemo(
-    () => MOCK_USE_CASES.filter((uc) => scopedAccountIds.has(uc.account_id)),
-    [scopedAccountIds],
+    () => allUseCases.filter((uc) => scopedAccountIds.has(uc.account_id)),
+    [allUseCases, scopedAccountIds],
   )
 
   const scopedForecasts = useMemo(
@@ -72,51 +88,40 @@ export function Forecasts() {
   const handleSubmitAdjust = useCallback(
     (newCategory: ForecastCategory, note: string) => {
       if (!modalForecast) return
-      setForecasts((prev) =>
-        prev.map((f) =>
-          f.use_case_id === modalForecast.use_case_id &&
-          f.quarter === modalForecast.quarter
-            ? {
-                ...f,
-                override_category: newCategory,
-                override_note: note,
-                override_by: currentUser.user_id,
-                override_at: new Date().toISOString(),
-                pending_approval: currentUser.role === 'ace',
-              }
-            : f,
-        ),
-      )
+      const key = `${modalForecast.use_case_id}:${modalForecast.quarter}`
+      const updated: UseCaseForecast = {
+        ...modalForecast,
+        override_category: newCategory,
+        override_note: note,
+        override_by: currentUser.user_id,
+        override_at: new Date().toISOString(),
+        pending_approval: currentUser.role === 'ace',
+      }
+      setForecastOverrides((prev) => new Map(prev).set(key, updated))
     },
     [modalForecast, currentUser],
   )
 
   const handleApprove = useCallback((forecast: UseCaseForecast) => {
-    setForecasts((prev) =>
-      prev.map((f) =>
-        f.use_case_id === forecast.use_case_id && f.quarter === forecast.quarter
-          ? { ...f, pending_approval: false }
-          : f,
-      ),
-    )
+    const key = `${forecast.use_case_id}:${forecast.quarter}`
+    setForecastOverrides((prev) => new Map(prev).set(key, { ...forecast, pending_approval: false }))
   }, [])
 
   const handleReject = useCallback((forecast: UseCaseForecast) => {
-    setForecasts((prev) =>
-      prev.map((f) =>
-        f.use_case_id === forecast.use_case_id && f.quarter === forecast.quarter
-          ? {
-              ...f,
-              override_category: null,
-              override_note: null,
-              override_by: null,
-              override_at: null,
-              pending_approval: false,
-            }
-          : f,
-      ),
+    const key = `${forecast.use_case_id}:${forecast.quarter}`
+    setForecastOverrides((prev) =>
+      new Map(prev).set(key, {
+        ...forecast,
+        override_category: null,
+        override_note: null,
+        override_by: null,
+        override_at: null,
+        pending_approval: false,
+      }),
     )
   }, [])
+
+  const loading = accountsLoading || useCasesLoading || forecastsLoading
 
   const kpis = [
     {
@@ -148,6 +153,14 @@ export function Forecasts() {
       bg: 'bg-slate-50',
     },
   ]
+
+  if (loading) {
+    return (
+      <div className="flex min-h-full items-center justify-center">
+        <div className="animate-spin h-8 w-8 border-4 border-snow-500 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-full bg-slate-50/50 px-6 py-6">

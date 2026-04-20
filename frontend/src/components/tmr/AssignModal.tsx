@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { X } from 'lucide-react'
 import { PriorityBadge } from './TMRStatusBadge'
-import { ACE_DISPLAY_NAMES } from '../../mocks/aceDisplayNames'
+import { useAceDisplayNames } from '../../api/hooks'
 
 interface AssignModalProps {
   open: boolean
@@ -12,8 +12,6 @@ interface AssignModalProps {
   priority: string
   onAssign: (aceId: string, note: string) => void
 }
-
-const aceOptions = Object.entries(ACE_DISPLAY_NAMES).map(([id, name]) => ({ id, name }))
 
 export function AssignModal({
   open,
@@ -26,6 +24,8 @@ export function AssignModal({
 }: AssignModalProps) {
   const [selectedAce, setSelectedAce] = useState('')
   const [note, setNote] = useState('')
+  const { data: aceDisplayNames = {} } = useAceDisplayNames()
+  const aceOptions = Object.entries(aceDisplayNames).map(([id, name]) => ({ id, name }))
 
   useEffect(() => {
     if (open) {

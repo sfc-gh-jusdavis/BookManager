@@ -1,0 +1,30 @@
+spec:
+  containers:
+    - name: bkmng
+      image: sfcogsops-snowhouse-aws-us-west-2.registry.snowflakecomputing.com/temp/jusdavis/bkmng_repo/bkmng:latest
+      env:
+        SPCS_MODE: "true"
+        MOCK_DATA: "true"
+        APP_ENV: "production"
+        ADMIN_USERS: "JUSDAVIS"
+        SPCS_DEFAULT_USER_ID: "ace-jane"
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: "128Mi"
+        limits:
+          cpu: "0.5"
+          memory: "512Mi"
+      readinessProbe:
+        port: 8080
+        path: /api/auth/mode
+
+  endpoints:
+    - name: bkmng-ui
+      port: 8080
+      public: true
+
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system

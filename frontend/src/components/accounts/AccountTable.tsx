@@ -5,7 +5,7 @@ import { AccountExpandedRow } from './AccountExpandedRow'
 import { CreditBar } from './CreditBar'
 import { StatusBadge } from './StatusBadge'
 import { estimatedCreditsUsed } from './accountCreditEstimate'
-import { ACE_DISPLAY_NAMES } from '../../mocks/aceDisplayNames'
+import { useAceDisplayNames } from '../../api/hooks'
 
 type SortField =
   | 'account_name'
@@ -57,6 +57,7 @@ function compareSort(
 }
 
 export function AccountTable({ accounts, useCasesByAccount, resourcesByAccount, currentUserName, currentUserId, onAddResource }: AccountTableProps) {
+  const { data: aceDisplayNames = {} } = useAceDisplayNames()
   const [sortField, setSortField] = useState<SortField>('account_name')
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -174,7 +175,7 @@ export function AccountTable({ accounts, useCasesByAccount, resourcesByAccount, 
                         {account.collaborators.length > 0 && (
                           <span
                             className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-500"
-                            title={`Team: ${ACE_DISPLAY_NAMES[account.ace_assigned] ?? account.ace_assigned}, ${account.collaborators.map((c) => ACE_DISPLAY_NAMES[c] ?? c).join(', ')}`}
+                            title={`Team: ${aceDisplayNames[account.ace_assigned] ?? account.ace_assigned}, ${account.collaborators.map((c) => aceDisplayNames[c] ?? c).join(', ')}`}
                           >
                             <Users size={10} />
                             {account.collaborators.length + 1}

@@ -7,9 +7,7 @@ import {
 import { AccountTable } from '../components/accounts/AccountTable'
 import { AccountCard } from '../components/accounts/AccountCard'
 import { useAuth } from '../context/AuthContext'
-import { MOCK_ACCOUNTS } from '../mocks/accounts'
-import { MOCK_USE_CASES } from '../mocks/useCases'
-import { MOCK_ACCOUNT_RESOURCES } from '../mocks/accountResources'
+import { useAccounts, useUseCases } from '../api/hooks'
 import type { UseCase, AccountResource } from '../types'
 import { isAceOnAccount } from '../utils/aceScoping'
 
@@ -33,20 +31,22 @@ function earliestTargetGoLive(useCases: UseCase[]): string | null {
 
 export function Accounts() {
   const { currentUser } = useAuth()
+  const { data: accounts = [], isLoading: accountsLoading } = useAccounts()
+  const { data: useCases = [], isLoading: useCasesLoading } = useUseCases()
   const [filters, setFilters] = useState<AccountFilterState>(initialFilters)
-  const [resources, setResources] = useState<AccountResource[]>(MOCK_ACCOUNT_RESOURCES)
+  const [localResources, setLocalResources] = useState<AccountResource[]>([])
 
   const resourcesByAccount = useMemo(() => {
     const map: Record<string, AccountResource[]> = {}
-    for (const res of resources) {
+    for (const res of localResources) {
       if (!map[res.account_id]) map[res.account_id] = []
       map[res.account_id]!.push(res)
     }
     return map
-  }, [resources])
+  }, [localResources])
 
   const handleAddResource = useCallback((resource: AccountResource) => {
-    setResources((prev) => [...prev, resource])
+    setLocalResources((prev) => [...prev, resource])
   }, [])
 
   const [viewMode, setViewMode] = useState<'table' | 'cards'>(() => {
@@ -61,21 +61,14 @@ export function Accounts() {
 
   const useCasesByAccount = useMemo(() => {
     const map: Record<string, UseCase[]> = {}
-    for (const uc of MOCK_USE_CASES) {
+    for (const uc of useCases) {
       if (!map[uc.account_id]) map[uc.account_id] = []
       map[uc.account_id]!.push(uc)
     }
     return map
-  }, [])
+  }, [useCases])
 
-  const roleScoped = useMemo(() => {
-    if (currentUser.role === 'ace') {
-      return MOCK_ACCOUNTS.filter(
-        (a) => isAceOnAccount(a, currentUser.user_id),
-      )
-    }
-    return MOCK_ACCOUNTS
-  }, [currentUser.role, currentUser.user_id])
+  const roleScoped = accounts
 
   const filtered = useMemo(() => {
     const q = filters.search.trim().toLowerCase()
@@ -90,6 +83,17 @@ export function Accounts() {
       return true
     })
   }, [roleScoped, filters])
+
+  if (accountsLoading || useCasesLoading) {
+    return (
+      <div className="flex min-h-full flex-col">
+        <Header title="Accounts" subtitle="Loading..." />
+        <div className="flex flex-1 items-center justify-center">
+          <div className="animate-spin h-8 w-8 border-4 border-snow-500 border-t-transparent rounded-full" />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex min-h-full flex-col">

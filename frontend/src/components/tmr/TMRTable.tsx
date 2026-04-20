@@ -5,7 +5,7 @@ import clsx from 'clsx'
 import type { TMR, UserRole, TMRReviewNote } from '../../types'
 import { TMRStatusBadge, PriorityBadge } from './TMRStatusBadge'
 import { ReviewPanel } from './ReviewPanel'
-import { ACE_DISPLAY_NAMES } from '../../mocks/aceDisplayNames'
+import { useAceDisplayNames } from '../../api/hooks'
 
 type SortField = 'account' | 'requestType' | 'priority' | 'status' | 'requested' | 'hours'
 type SortDir = 'asc' | 'desc'
@@ -41,6 +41,7 @@ export function TMRTable({
   const [sortField, setSortField] = useState<SortField>('requested')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const { data: aceDisplayNames = {} } = useAceDisplayNames()
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -144,7 +145,7 @@ export function TMRTable({
           {sorted.map((tmr) => {
             const expanded = expandedId === tmr.tmr_id
             const assigneeName = tmr.assigned_to
-              ? (ACE_DISPLAY_NAMES[tmr.assigned_to] ?? tmr.assigned_to)
+              ? (aceDisplayNames[tmr.assigned_to] ?? tmr.assigned_to)
               : null
 
             return (

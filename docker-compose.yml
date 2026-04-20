@@ -8,25 +8,24 @@ services:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ~/.snowflake:/root/.snowflake:ro
     env_file:
       - .env
     environment:
       - APP_ENV=development
-      - MOCK_DATA=true
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   frontend:
     build:
-      context: ./frontend
+      context: ./bkmng-next
       dockerfile: Dockerfile
       target: development
     ports:
-      - "5173:5173"
+      - "3001:3001"
     volumes:
-      - ./frontend:/app
+      - ./bkmng-next:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://localhost:8000
-    command: npm run dev -- --host 0.0.0.0
+      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - INTERNAL_API_URL=http://backend:8000
     depends_on:
       - backend
