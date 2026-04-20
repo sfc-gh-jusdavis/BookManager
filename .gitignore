@@ -52,4 +52,5 @@ coverage/
 # .cortex/ is intentionally NOT excluded — project commands and context rules are committed
 
 # Plan files at root (keep in docs/plans/ instead)
-*.plan.md
+/*.plan.md
+!/docs/plans/*.plan.md
