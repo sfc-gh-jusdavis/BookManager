@@ -14,3 +14,4 @@ class CurrentUser(BaseModel):
     display_name: str
     role: UserRole
     team_id: Optional[str] = None
+    is_admin: bool = False

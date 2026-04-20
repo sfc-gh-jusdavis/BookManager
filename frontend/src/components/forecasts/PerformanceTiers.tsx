@@ -3,7 +3,7 @@ import type { LucideIcon } from 'lucide-react'
 import { TrendingDown, TrendingUp, Minus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import type { Account, PerformanceTier } from '../../types'
-import { MOCK_CREDIT_SERIES } from '../../mocks/credits'
+
 
 interface PerformanceTiersProps {
   accounts: Account[]
@@ -12,11 +12,6 @@ interface PerformanceTiersProps {
 interface AccountConsumptionChange {
   wow: number | null
   mom: number | null
-}
-
-function changePct(current: number, previous: number): number | null {
-  if (previous === 0) return null
-  return ((current - previous) / previous) * 100
 }
 
 function formatChange(value: number | null): string {
@@ -103,29 +98,8 @@ const tierConfigs: {
 export function PerformanceTiers({ accounts }: PerformanceTiersProps) {
   const consumptionByAccount = useMemo(() => {
     const map = new Map<string, AccountConsumptionChange>()
-    const accountIds = new Set(accounts.map((a) => a.account_id))
-
-    for (const accountId of accountIds) {
-      const entries = MOCK_CREDIT_SERIES.filter((e) => e.account_id === accountId)
-      const byDate = new Map<string, number>()
-      for (const e of entries) {
-        byDate.set(e.date, (byDate.get(e.date) ?? 0) + e.credits_used)
-      }
-
-      const dates = [...byDate.keys()].sort()
-      const daily = dates.map((d) => byDate.get(d) ?? 0)
-      const len = daily.length
-
-      const sum = (arr: number[]) => arr.reduce((s, v) => s + v, 0)
-      const last7 = daily.slice(Math.max(0, len - 7))
-      const prev7 = daily.slice(Math.max(0, len - 14), Math.max(0, len - 7))
-      const last30 = daily.slice(Math.max(0, len - 30))
-      const prev30 = daily.slice(Math.max(0, len - 60), Math.max(0, len - 30))
-
-      map.set(accountId, {
-        wow: changePct(sum(last7), sum(prev7)),
-        mom: changePct(sum(last30), sum(prev30)),
-      })
+    for (const acc of accounts) {
+      map.set(acc.account_id, { wow: null, mom: null })
     }
     return map
   }, [accounts])

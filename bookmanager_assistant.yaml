@@ -1,0 +1,1175 @@
+name: BookManager_Data_Assistant
+description: >
+  Semantic model for BookManager — Snowflake's field engineering engagement tracker.
+  Use this to answer questions about accounts, use cases, MEDDPICC scores, go-live dates,
+  consumption data, engagement signals, Gong interactions, conversation topics, contacts,
+  and opportunities. All tables are scoped to SE-Activation accounts only.
+
+tables:
+  - name: accounts
+    description: >
+      Enriched account view. Each row is an SE-Activation customer account with health score,
+      momentum category (accelerating/steady/decelerating/stalled), contract utilization,
+      week-over-week and month-over-month consumption change, and engagement metrics derived
+      from Gong calls and use case data.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_ACCOUNTS
+    dimensions:
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Unique Salesforce account identifier.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Customer account name.
+
+      - name: industry
+        expr: INDUSTRY
+        data_type: TEXT
+        description: Industry vertical (e.g. Financial Services, Retail, Healthcare).
+
+      - name: region
+        expr: REGION
+        data_type: TEXT
+        description: Geographic region of the account.
+
+      - name: ace_assigned
+        expr: ACE_ASSIGNED
+        data_type: TEXT
+        description: Email of the Account Cloud Engineer assigned to this account.
+
+      - name: engagement_status
+        expr: ENGAGEMENT_STATUS
+        data_type: TEXT
+        description: Current engagement status. Values include Active, At Risk.
+
+      - name: momentum
+        expr: MOMENTUM
+        data_type: TEXT
+        description: >
+          Computed momentum category based on health score.
+          Values: accelerating (score>=70), steady (>=45), decelerating (>=25), stalled (<25).
+
+    time_dimensions:
+      - name: activation_start_date
+        expr: ACTIVATION_START_DATE
+        data_type: date
+        description: Date when the Snowflake activation engagement began.
+
+      - name: last_external_interaction_date
+        expr: LAST_EXTERNAL_INTERACTION_DATE
+        data_type: date
+        description: Date of the most recent Gong call with the customer.
+
+    facts:
+      - name: health_score
+        expr: HEALTH_SCORE
+        data_type: NUMBER
+        description: >
+          Composite health score 0-100. Formula: WoW consumption (25%) +
+          implementation use case count (25%) + recency of last interaction (25%) +
+          MEDDPICC score (25%).
+
+      - name: contract_utilization_pct
+        expr: CONTRACT_UTILIZATION_PCT
+        data_type: NUMBER
+        description: Percentage of contract credits consumed (0-100+).
+
+      - name: wow_pct_change
+        expr: WOW_PCT_CHANGE
+        data_type: NUMBER
+        description: Week-over-week percentage change in credit consumption.
+
+      - name: mom_pct_change
+        expr: MOM_PCT_CHANGE
+        data_type: NUMBER
+        description: Month-over-month percentage change in credit consumption.
+
+      - name: total_gong_calls_90d
+        expr: TOTAL_GONG_CALLS_90D
+        data_type: NUMBER
+        description: Number of Gong calls in the past 90 days.
+
+      - name: days_since_last_interaction
+        expr: DAYS_SINCE_LAST_INTERACTION
+        data_type: NUMBER
+        description: Calendar days since the most recent external Gong call.
+
+      - name: active_use_case_count
+        expr: ACTIVE_USE_CASE_COUNT
+        data_type: NUMBER
+        description: Count of use cases in In Pursuit or Implementation status.
+
+      - name: impl_use_case_count
+        expr: IMPL_USE_CASE_COUNT
+        data_type: NUMBER
+        description: Count of use cases in Implementation status.
+
+      - name: avg_meddpicc_score
+        expr: AVG_MEDDPICC_SCORE
+        data_type: NUMBER
+        description: Average MEDDPICC overall score across all use cases for this account.
+
+      - name: acv
+        expr: ACV
+        data_type: NUMBER
+        description: Annual Contract Value in USD.
+
+      - name: contract_capacity
+        expr: CONTRACT_CAPACITY
+        data_type: NUMBER
+        description: Total contracted Snowflake credits.
+
+      - name: total_consumed_credits
+        expr: TOTAL_CONSUMED_CREDITS
+        data_type: NUMBER
+        description: Total Snowflake credits consumed to date.
+
+      - name: capacity_remaining
+        expr: CAPACITY_REMAINING
+        data_type: NUMBER
+        description: Credits remaining in the contract.
+
+  - name: use_cases
+    description: >
+      Enriched use case view. Each row is a Snowflake use case with stage velocity
+      (slow/normal/fast relative to portfolio median), days in current stage, team members,
+      primary champion contact, and recent Gong call activity.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_USE_CASES
+    dimensions:
+      - name: use_case_id
+        expr: USE_CASE_ID
+        data_type: TEXT
+        description: Unique identifier for the use case.
+
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this use case belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Name of the account.
+
+      - name: use_case_name
+        expr: USE_CASE_NAME
+        data_type: TEXT
+        description: Name of the use case.
+
+      - name: status
+        expr: STATUS
+        data_type: TEXT
+        description: Execution status. Values include In Pursuit, Implementation, Production, Not In Pursuit.
+
+      - name: stage
+        expr: STAGE
+        data_type: TEXT
+        description: Stage such as 2 - Scoping, 3 - Validation, 5 - Implementation In Progress.
+
+      - name: stage_velocity
+        expr: STAGE_VELOCITY
+        data_type: TEXT
+        description: >
+          How fast the use case is progressing. Values: slow (>1.5x portfolio median),
+          normal, fast (<0.5x median).
+
+      - name: complexity
+        expr: COMPLEXITY
+        data_type: TEXT
+        description: Complexity rating such as Low, Medium, or High.
+
+      - name: lead_se
+        expr: LEAD_SE
+        data_type: TEXT
+        description: Email of the lead Solutions Engineer.
+
+      - name: ace_assigned
+        expr: ACE_ASSIGNED
+        data_type: TEXT
+        description: Email of the Account Cloud Engineer.
+
+      - name: primary_contact_name
+        expr: PRIMARY_CONTACT_NAME
+        data_type: TEXT
+        description: Name of the primary champion contact for this use case.
+
+      - name: team_members
+        expr: TEAM_MEMBERS
+        data_type: TEXT
+        description: Semicolon-separated list of team members and their roles.
+
+    time_dimensions:
+      - name: go_live_date
+        expr: GO_LIVE_DATE
+        data_type: date
+        description: Actual go-live date.
+
+      - name: target_go_live_date
+        expr: TARGET_GO_LIVE_DATE
+        data_type: date
+        description: Target planned go-live date.
+
+      - name: created_date
+        expr: CREATED_DATE
+        data_type: date
+        description: Date the use case was created.
+
+    facts:
+      - name: meddpicc_overall_score
+        expr: MEDDPICC_OVERALL_SCORE
+        data_type: NUMBER
+        description: Overall MEDDPICC score 0-87. Higher is better.
+
+      - name: days_in_current_stage
+        expr: DAYS_IN_CURRENT_STAGE
+        data_type: NUMBER
+        description: Number of days the use case has been in its current stage.
+
+      - name: related_gong_calls_30d
+        expr: RELATED_GONG_CALLS_30D
+        data_type: NUMBER
+        description: Number of Gong calls for this account in the past 30 days.
+
+  - name: account_signals
+    description: >
+      Pre-computed account intelligence signals. Each row is an active signal for an account
+      such as no interaction in 14 days, consumption spike, champion silent, stage stalled,
+      competitor mentioned, or go-live approaching. Refreshed hourly.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_ACCOUNT_SIGNALS
+    dimensions:
+      - name: signal_id
+        expr: SIGNAL_ID
+        data_type: TEXT
+        description: Deterministic signal identifier.
+
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this signal belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account name.
+
+      - name: signal_type
+        expr: SIGNAL_TYPE
+        data_type: TEXT
+        description: >
+          Type of signal. Values: no_interaction_14d, no_interaction_7d, consumption_spike,
+          consumption_dip, champion_silent, capacity_warning, stage_stalled, go_live_approaching,
+          competitor_mentioned, open_tmr, expansion_signal, new_stakeholder, high_momentum,
+          at_risk, blocker.
+
+      - name: priority
+        expr: PRIORITY
+        data_type: TEXT
+        description: "Signal priority. Values: high, medium, low."
+
+      - name: signal_text
+        expr: SIGNAL_TEXT
+        data_type: TEXT
+        description: Human-readable one-line summary of the signal.
+
+      - name: context
+        expr: CONTEXT
+        data_type: TEXT
+        description: Additional context and data supporting the signal.
+
+      - name: entity_type
+        expr: ENTITY_TYPE
+        data_type: TEXT
+        description: "Type of entity triggering the signal. Values: account, use_case, contact, tmr."
+
+      - name: source
+        expr: SOURCE
+        data_type: TEXT
+        description: "Which system generated this signal. Values: core (engagement/consumption/use-case signals), support (Salesforce Cases)."
+
+      - name: category
+        expr: CATEGORY
+        data_type: TEXT
+        description: "Signal family. Values: engagement, consumption, go_live, use_case, tmr, support, other."
+
+    time_dimensions:
+      - name: created_at
+        expr: CREATED_AT
+        data_type: timestamp
+        description: When the signal was generated.
+
+    facts:
+      - name: signal_count
+        expr: "1"
+        data_type: NUMBER
+        description: Count of signals (use for aggregation).
+
+  - name: interactions
+    description: >
+      Gong call interactions enriched and scoped to SE-Activation accounts.
+      Contains HTML-stripped summaries, key points, next steps, topics, trackers (competitors),
+      participant emails, talk ratios, and call scores.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_INTERACTIONS
+    dimensions:
+      - name: interaction_id
+        expr: INTERACTION_ID
+        data_type: TEXT
+        description: Unique Gong call identifier.
+
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this call belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account name.
+
+      - name: title
+        expr: TITLE
+        data_type: TEXT
+        description: Gong call title.
+
+      - name: topics
+        expr: TOPICS
+        data_type: TEXT
+        description: Comma-separated list of Gong topics discussed in the call.
+
+      - name: trackers
+        expr: TRACKERS
+        data_type: TEXT
+        description: Comma-separated list of Gong trackers fired (competitor names, etc.).
+
+      - name: participant_emails
+        expr: PARTICIPANT_EMAILS
+        data_type: TEXT
+        description: Comma-separated list of participant email addresses.
+
+    time_dimensions:
+      - name: interaction_date
+        expr: INTERACTION_DATE
+        data_type: timestamp
+        description: Date and time the Gong call occurred.
+
+    facts:
+      - name: duration_sec
+        expr: DURATION_SEC
+        data_type: NUMBER
+        description: Call duration in seconds.
+
+      - name: call_score
+        expr: CALL_SCORE
+        data_type: NUMBER
+        description: Gong call quality score.
+
+      - name: talk_ratio_us
+        expr: TALK_RATIO_US
+        data_type: NUMBER
+        description: Percentage of talk time by Snowflake participants.
+
+      - name: talk_ratio_them
+        expr: TALK_RATIO_THEM
+        data_type: NUMBER
+        description: Percentage of talk time by customer participants.
+
+  - name: account_topics
+    description: >
+      Aggregated Gong conversation topics per account over the past 90 days.
+      Each row is a topic-account combination with mention count and last mentioned date.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_ACCOUNT_TOPICS
+    dimensions:
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this topic belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account name.
+
+      - name: topic
+        expr: TOPIC
+        data_type: TEXT
+        description: Gong conversation topic name.
+
+    time_dimensions:
+      - name: last_mentioned_date
+        expr: LAST_MENTIONED_DATE
+        data_type: date
+        description: Most recent date this topic was discussed.
+
+    facts:
+      - name: mention_count_90d
+        expr: MENTION_COUNT_90D
+        data_type: NUMBER
+        description: Number of calls where this topic appeared in the past 90 days.
+
+      - name: avg_duration_sec
+        expr: AVG_DURATION_SEC
+        data_type: NUMBER
+        description: Average duration in seconds this topic was discussed per call.
+
+  - name: contacts
+    description: >
+      Customer contacts enriched with Gong call participation data.
+      Champions are derived from use case role assignments. Includes call frequency
+      and recency metrics for each contact.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_CONTACTS
+    dimensions:
+      - name: contact_id
+        expr: CONTACT_ID
+        data_type: TEXT
+        description: Unique Salesforce contact identifier.
+
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this contact belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account name.
+
+      - name: name
+        expr: NAME
+        data_type: TEXT
+        description: Contact full name.
+
+      - name: email
+        expr: EMAIL
+        data_type: TEXT
+        description: Contact email address.
+
+      - name: title
+        expr: TITLE
+        data_type: TEXT
+        description: Job title.
+
+      - name: department
+        expr: DEPARTMENT
+        data_type: TEXT
+        description: Department.
+
+      - name: role_on_account
+        expr: ROLE_ON_ACCOUNT
+        data_type: TEXT
+        description: Roles across use cases (comma-separated).
+
+      - name: is_champion
+        expr: IS_CHAMPION
+        data_type: TEXT
+        description: TRUE if this contact is a champion on any use case.
+
+    time_dimensions:
+      - name: last_gong_call_date
+        expr: LAST_GONG_CALL_DATE
+        data_type: date
+        description: Most recent Gong call this contact participated in.
+
+    facts:
+      - name: gong_call_count_90d
+        expr: GONG_CALL_COUNT_90D
+        data_type: NUMBER
+        description: Number of Gong calls this contact appeared in during the past 90 days.
+
+      - name: days_since_last_call
+        expr: DAYS_SINCE_LAST_CALL
+        data_type: NUMBER
+        description: Calendar days since this contact's last Gong call.
+
+  - name: opportunities
+    description: >
+      Salesforce opportunities linked to SE-Activation accounts. Includes stage, close date,
+      amount, SE comments, PS comments, and decision criteria.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_ONT_OPPORTUNITIES
+    dimensions:
+      - name: opp_id
+        expr: OPP_ID
+        data_type: TEXT
+        description: Unique Salesforce opportunity identifier.
+
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this opportunity belongs to.
+
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account name.
+
+      - name: opp_name
+        expr: OPP_NAME
+        data_type: TEXT
+        description: Opportunity name.
+
+      - name: stage
+        expr: STAGE
+        data_type: TEXT
+        description: Salesforce opportunity stage.
+
+      - name: se_comments
+        expr: SE_COMMENTS
+        data_type: TEXT
+        description: Sales Engineer comments on the opportunity.
+
+      - name: ps_comments
+        expr: PS_COMMENTS
+        data_type: TEXT
+        description: Professional Services comments on the opportunity.
+
+    time_dimensions:
+      - name: close_date
+        expr: CLOSE_DATE
+        data_type: date
+        description: Opportunity expected close date.
+
+    facts:
+      - name: amount
+        expr: AMOUNT
+        data_type: NUMBER
+        description: Opportunity amount in USD.
+
+  - name: product_adoption
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_A360_PRODUCT_ADOPTION
+    description: >
+      Platform adoption data sourced from A360. Each row is an account+product_category+use_case+feature
+      combination showing when the account first used it, last used it, and whether it's active in the last
+      30 days. Covers ~52 accounts with A360 data. Use this for feature adoption questions.
+    dimensions:
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Salesforce account identifier.
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account display name.
+      - name: product_category
+        expr: PRODUCT_CATEGORY
+        data_type: TEXT
+        description: >
+          Top-level product category. Values: AI/ML, Analytics, Applications & Collaboration,
+          Data Engineering, Platform, Transactions.
+      - name: use_case
+        expr: USE_CASE
+        data_type: TEXT
+        description: Use case within the category (e.g. Ingestion, Transformation, Business Intelligence).
+      - name: feature
+        expr: FEATURE
+        data_type: TEXT
+        description: Specific feature name (e.g. Cortex Search, Dynamic Tables, Snowpipe).
+      - name: is_new_30d
+        expr: IS_NEW_30D
+        data_type: BOOLEAN
+        description: True if this feature was first used within the last 30 days.
+      - name: is_active_30d
+        expr: IS_ACTIVE_30D
+        data_type: BOOLEAN
+        description: True if this feature was last used within the last 30 days.
+    time_dimensions:
+      - name: first_use_date
+        expr: FIRST_USE_DATE
+        data_type: date
+        description: Date the account first used this feature.
+      - name: last_use_date
+        expr: LAST_USE_DATE
+        data_type: date
+        description: Date the account most recently used this feature.
+    facts:
+      - name: days_since_first_use
+        expr: DAYS_SINCE_FIRST_USE
+        data_type: NUMBER
+        description: Number of days since the account first used this feature.
+      - name: total_revenue_90d
+        expr: TOTAL_REVENUE_90D
+        data_type: NUMBER
+        description: Revenue attributed to this feature+account in the last 90 days.
+
+  - name: a360_contract
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_A360_CONTRACT
+    description: >
+      Contract health data sourced from A360 Bookings + Overage + Run Rate views.
+      One row per account. Covers ~55 accounts with contract data. Contains ACV, TCV,
+      contract dates, overage predictions, and revenue run rates.
+    dimensions:
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Salesforce account identifier.
+        unique: true
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account display name.
+      - name: deal_type
+        expr: DEAL_TYPE
+        data_type: TEXT
+        description: Deal type (e.g. Renewal, New Business, Expansion).
+      - name: is_renewal
+        expr: IS_RENEWAL
+        data_type: BOOLEAN
+        description: True if this is a renewal contract.
+    time_dimensions:
+      - name: contract_start_date
+        expr: CONTRACT_START_DATE
+        data_type: date
+        description: Contract start date.
+      - name: contract_end_date
+        expr: CONTRACT_END_DATE
+        data_type: date
+        description: Contract end date.
+      - name: predicted_overage_date
+        expr: PREDICTED_OVERAGE_DATE
+        data_type: date
+        description: Predicted date when account will exceed contract capacity.
+    facts:
+      - name: net_acv
+        expr: NET_ACV
+        data_type: NUMBER
+        description: Net Annual Contract Value in USD.
+      - name: net_tcv
+        expr: NET_TCV
+        data_type: NUMBER
+        description: Net Total Contract Value in USD.
+      - name: days_until_contract_end
+        expr: DAYS_UNTIL_CONTRACT_END
+        data_type: NUMBER
+        description: Days until the contract expires.
+      - name: rev_30d
+        expr: REV_30D
+        data_type: NUMBER
+        description: Revenue run rate in the last 30 days.
+      - name: rev_90d
+        expr: REV_90D
+        data_type: NUMBER
+        description: Revenue run rate in the last 90 days.
+      - name: rev_180d
+        expr: REV_180D
+        data_type: NUMBER
+        description: Revenue run rate in the last 180 days.
+
+  - name: support_tickets
+    description: >
+      Materialized view of Salesforce support cases scoped to SE-Activation accounts.
+      Covers Technical Issue cases created in the last 90 days. One row per case.
+      Use this for support health questions, escalations, Sev-1/Sev-2 counts, and long-running tickets.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_SUPPORT_TICKETS
+    dimensions:
+      - name: case_id
+        expr: CASE_ID
+        data_type: TEXT
+        description: Unique Salesforce case identifier.
+      - name: case_number
+        expr: CASE_NUMBER
+        data_type: TEXT
+        description: Human-readable case number.
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this case belongs to.
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account display name.
+      - name: status
+        expr: STATUS
+        data_type: TEXT
+        description: Case status (e.g. New, In Progress, Pending Customer, Closed).
+      - name: severity
+        expr: SEVERITY
+        data_type: TEXT
+        description: "Case severity. Values contain 'Severity-1', 'Severity-2', 'Severity-3', 'Severity-4'."
+      - name: priority
+        expr: PRIORITY
+        data_type: TEXT
+        description: Case priority level.
+      - name: category
+        expr: CATEGORY
+        data_type: TEXT
+        description: Case category (e.g. Product Issue, Feature Request).
+      - name: is_escalated
+        expr: IS_ESCALATED
+        data_type: BOOLEAN
+        description: True if the case is currently escalated.
+      - name: is_closed
+        expr: IS_CLOSED
+        data_type: BOOLEAN
+        description: True if the case has been closed.
+      - name: snowflake_account
+        expr: SNOWFLAKE_ACCOUNT
+        data_type: TEXT
+        description: Snowflake account identifier associated with the case.
+    time_dimensions:
+      - name: created_date
+        expr: CREATED_DATE
+        data_type: timestamp
+        description: Date the case was created.
+      - name: closed_date
+        expr: CLOSED_DATE
+        data_type: timestamp
+        description: Date the case was closed (NULL if still open).
+    facts:
+      - name: days_open
+        expr: DAYS_OPEN
+        data_type: NUMBER
+        description: Number of days the case has been open.
+      - name: time_to_resolution_hrs
+        expr: TIME_TO_RESOLUTION_HRS
+        data_type: NUMBER
+        description: Time to resolution in business hours (NULL if still open).
+
+  - name: a360_consumption
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_A360_CONSUMPTION
+    description: >
+      Week-over-week and month-over-month revenue consumption trends from A360 daily data.
+      One row per account. Covers ~49 accounts with WoW trend data.
+    dimensions:
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Salesforce account identifier.
+        unique: true
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account display name.
+    facts:
+      - name: wow_pct_change
+        expr: WOW_PCT_CHANGE
+        data_type: NUMBER
+        description: Week-over-week percentage change in revenue consumption.
+      - name: mom_pct_change
+        expr: MOM_PCT_CHANGE
+        data_type: NUMBER
+        description: Month-over-month percentage change in revenue consumption.
+      - name: rev_90d
+        expr: REV_90D
+        data_type: NUMBER
+        description: Total revenue in the last 90 days.
+      - name: active_days_30d
+        expr: ACTIVE_DAYS_30D
+        data_type: NUMBER
+        description: Number of days with usage in the last 30 days.
+
+  - name: use_case_breakdowns
+    description: >
+      AI-generated suggestions for splitting large use cases into smaller, independently
+      trackable sub-use-cases. Each row is one suggested sub-use-case mapped to an official
+      Snowflake workload and technical use case type. Splittability score 1-10 indicates
+      how strongly the parent UC should be split. Use this for breakdown suggestions,
+      workload distribution analysis, and identifying go-live acceleration opportunities.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_USE_CASE_BREAKDOWNS
+    dimensions:
+      - name: breakdown_id
+        expr: BREAKDOWN_ID
+        data_type: TEXT
+        description: Unique identifier for each sub-use-case suggestion.
+      - name: use_case_id
+        expr: USE_CASE_ID
+        data_type: TEXT
+        description: Parent use case Salesforce ID.
+      - name: account_id
+        expr: ACCOUNT_ID
+        data_type: TEXT
+        description: Account this breakdown belongs to.
+      - name: account_name
+        expr: ACCOUNT_NAME
+        data_type: TEXT
+        description: Account display name.
+      - name: parent_use_case_name
+        expr: PARENT_USE_CASE_NAME
+        data_type: TEXT
+        description: Name of the parent use case that was analyzed for splitting.
+      - name: sub_use_case_name
+        expr: SUB_USE_CASE_NAME
+        data_type: TEXT
+        description: Suggested name for the sub-use-case.
+      - name: sub_workload
+        expr: SUB_WORKLOAD
+        data_type: TEXT
+        description: Official Snowflake workload category for this sub-UC.
+      - name: sub_technical_use_case
+        expr: SUB_TECHNICAL_USE_CASE
+        data_type: TEXT
+        description: Official Snowflake technical use case type for this sub-UC.
+      - name: sub_rationale
+        expr: SUB_RATIONALE
+        data_type: TEXT
+        description: Why this sub-use-case was identified as a separate workstream.
+      - name: sub_estimated_effort
+        expr: SUB_ESTIMATED_EFFORT
+        data_type: TEXT
+        description: Estimated effort level (small/medium/large).
+      - name: sub_key_activities
+        expr: SUB_KEY_ACTIVITIES
+        data_type: TEXT
+        description: Key activities for this sub-use-case.
+      - name: overall_rationale
+        expr: OVERALL_RATIONALE
+        data_type: TEXT
+        description: Overall rationale for splitting the parent use case.
+      - name: splittability_reason
+        expr: SPLITTABILITY_REASON
+        data_type: TEXT
+        description: Brief reason from the triage phase explaining the splittability score.
+      - name: criteria_scores
+        expr: CRITERIA_SCORES
+        data_type: TEXT
+        description: Per-criterion scores used in the evaluation.
+      - name: status
+        expr: STATUS
+        data_type: TEXT
+        description: Status of the suggestion (suggested/accepted/dismissed).
+    measures:
+      - name: splittability_score
+        expr: SPLITTABILITY_SCORE
+        data_type: NUMBER
+        description: Score 1-10 indicating how splittable the parent use case is.
+      - name: sub_use_case_index
+        expr: SUB_USE_CASE_INDEX
+        data_type: NUMBER
+        description: Index of this sub-UC within its parent breakdown.
+      - name: total_sub_use_cases
+        expr: TOTAL_SUB_USE_CASES
+        data_type: NUMBER
+        description: Total number of sub-use-cases suggested for the parent.
+    time_dimensions:
+      - name: computed_at
+        expr: COMPUTED_AT
+        data_type: TIMESTAMP_NTZ
+        description: When this breakdown was computed.
+
+  - name: eval_framework
+    description: >
+      Configuration table storing evaluation criteria, prompts, and rubrics used by the
+      use case breakdown analysis. Each row defines one criterion with its weight, prompt
+      template, and scoring rubric. Use this to explain how splittability decisions are made.
+    base_table:
+      database: TEMP
+      schema: JUSDAVIS
+      table: BKMNG_EVAL_FRAMEWORK
+    dimensions:
+      - name: framework_id
+        expr: FRAMEWORK_ID
+        data_type: TEXT
+        description: Unique identifier for this criterion or prompt.
+      - name: category
+        expr: CATEGORY
+        data_type: TEXT
+        description: Category grouping (splittability or prompt).
+      - name: label
+        expr: LABEL
+        data_type: TEXT
+        description: Human-readable name of this criterion.
+      - name: description
+        expr: DESCRIPTION
+        data_type: TEXT
+        description: Detailed description of what this criterion evaluates.
+      - name: rubric
+        expr: RUBRIC
+        data_type: TEXT
+        description: Scoring rubric explaining how to interpret scores 1-10.
+      - name: is_active
+        expr: IS_ACTIVE
+        data_type: BOOLEAN
+        description: Whether this criterion is currently active.
+    measures:
+      - name: weight
+        expr: WEIGHT
+        data_type: NUMBER
+        description: Relative weight of this criterion in the overall score.
+
+verified_queries:
+  - name: accounts_by_momentum
+    question: How many accounts are in each momentum category?
+    sql: >
+      SELECT MOMENTUM, COUNT(*) AS account_count,
+             ROUND(AVG(HEALTH_SCORE), 1) AS avg_health_score
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      GROUP BY MOMENTUM
+      ORDER BY CASE MOMENTUM
+               WHEN 'accelerating' THEN 0 WHEN 'steady' THEN 1
+               WHEN 'decelerating' THEN 2 ELSE 3 END
+
+  - name: top_signals_by_priority
+    question: What are the top signals I should act on today?
+    sql: >
+      SELECT SIGNAL_TYPE, PRIORITY, ACCOUNT_NAME, SIGNAL_TEXT, CONTEXT
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+      ORDER BY CASE PRIORITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+               CASE SIGNAL_TYPE
+                   WHEN 'no_interaction_14d' THEN 0 WHEN 'consumption_spike' THEN 1
+                   WHEN 'champion_silent' THEN 2 WHEN 'capacity_warning' THEN 3 ELSE 4 END
+      LIMIT 15
+
+  - name: accounts_no_interaction_14d
+    question: Which accounts have had no interaction in the last 14 days?
+    sql: >
+      SELECT ACCOUNT_NAME, DAYS_SINCE_LAST_INTERACTION, LAST_EXTERNAL_INTERACTION_DATE,
+             MOMENTUM, HEALTH_SCORE, ACTIVE_USE_CASE_COUNT
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      WHERE DAYS_SINCE_LAST_INTERACTION >= 14
+         OR (LAST_EXTERNAL_INTERACTION_DATE IS NULL AND ACTIVE_USE_CASE_COUNT > 0)
+      ORDER BY COALESCE(DAYS_SINCE_LAST_INTERACTION, 999) DESC
+
+  - name: upcoming_go_lives_30d
+    question: What are my upcoming go-live dates in the next 30 days?
+    sql: >
+      SELECT USE_CASE_NAME, ACCOUNT_NAME, STAGE, STAGE_VELOCITY,
+             COALESCE(GO_LIVE_DATE, TARGET_GO_LIVE_DATE) AS go_live,
+             DATEDIFF('day', CURRENT_DATE(), COALESCE(GO_LIVE_DATE, TARGET_GO_LIVE_DATE)) AS days_until,
+             MEDDPICC_OVERALL_SCORE, PRIMARY_CONTACT_NAME
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_USE_CASES
+      WHERE STATUS = 'Implementation'
+        AND COALESCE(GO_LIVE_DATE, TARGET_GO_LIVE_DATE)
+            BETWEEN CURRENT_DATE() AND DATEADD('day', 30, CURRENT_DATE())
+      ORDER BY go_live ASC
+
+  - name: stalled_use_cases
+    question: Which use cases are stalled or moving slowly?
+    sql: >
+      SELECT USE_CASE_NAME, ACCOUNT_NAME, STAGE, DAYS_IN_CURRENT_STAGE,
+             STAGE_VELOCITY, MEDDPICC_OVERALL_SCORE, LEAD_SE, PRIMARY_CONTACT_NAME
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_USE_CASES
+      WHERE STAGE_VELOCITY = 'slow'
+        AND STATUS IN ('In Pursuit', 'Implementation')
+      ORDER BY DAYS_IN_CURRENT_STAGE DESC NULLS LAST
+
+  - name: champion_silence_report
+    question: Which champion contacts have gone silent (no call in 30+ days)?
+    sql: >
+      SELECT NAME, ACCOUNT_NAME, TITLE, ROLE_ON_ACCOUNT,
+             LAST_GONG_CALL_DATE, DAYS_SINCE_LAST_CALL, GONG_CALL_COUNT_90D
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_CONTACTS
+      WHERE IS_CHAMPION = TRUE
+        AND (DAYS_SINCE_LAST_CALL > 30 OR LAST_GONG_CALL_DATE IS NULL)
+      ORDER BY COALESCE(DAYS_SINCE_LAST_CALL, 9999) DESC
+
+  - name: top_topics_by_account
+    question: What topics are most frequently discussed at each account?
+    sql: >
+      SELECT ACCOUNT_NAME, TOPIC, MENTION_COUNT_90D, LAST_MENTIONED_DATE
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_TOPICS
+      ORDER BY ACCOUNT_NAME, MENTION_COUNT_90D DESC
+
+  - name: accounts_by_health_score
+    question: Which accounts have the highest and lowest health scores?
+    sql: >
+      SELECT ACCOUNT_NAME, HEALTH_SCORE, MOMENTUM, CONTRACT_UTILIZATION_PCT,
+             WOW_PCT_CHANGE, DAYS_SINCE_LAST_INTERACTION, IMPL_USE_CASE_COUNT,
+             ROUND(AVG_MEDDPICC_SCORE, 0) AS avg_meddpicc
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      ORDER BY HEALTH_SCORE DESC NULLS LAST
+
+  - name: consumption_risk_accounts
+    question: Which accounts are at risk of overconsumption or have a consumption spike?
+    sql: >
+      SELECT ACCOUNT_NAME, CONTRACT_UTILIZATION_PCT, WOW_PCT_CHANGE, MOM_PCT_CHANGE,
+             TOTAL_CONSUMED_CREDITS, CONTRACT_CAPACITY, CAPACITY_REMAINING, PREDICTED_OVERAGE_DATE
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      WHERE CONTRACT_UTILIZATION_PCT > 70 OR WOW_PCT_CHANGE >= 30
+      ORDER BY CONTRACT_UTILIZATION_PCT DESC NULLS LAST
+
+  - name: recent_gong_calls
+    question: What are the most recent Gong calls and what was discussed?
+    sql: >
+      SELECT ACCOUNT_NAME, TITLE, INTERACTION_DATE::DATE AS call_date,
+             ROUND(DURATION_SEC / 60.0, 0) AS duration_mins, CALL_SCORE, TOPICS
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_INTERACTIONS
+      ORDER BY INTERACTION_DATE DESC
+      LIMIT 20
+
+  - name: signal_count_by_type
+    question: How many signals of each type are currently active?
+    sql: >
+      SELECT SIGNAL_TYPE, PRIORITY, COUNT(*) AS signal_count
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+      GROUP BY SIGNAL_TYPE, PRIORITY
+      ORDER BY CASE PRIORITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+               signal_count DESC
+
+  - name: opportunities_by_stage
+    question: What opportunities are in each stage for my accounts?
+    sql: >
+      SELECT STAGE, COUNT(*) AS opp_count, SUM(AMOUNT) AS total_amount
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_OPPORTUNITIES
+      WHERE STAGE NOT IN ('Closed Lost', 'Closed Won')
+      GROUP BY STAGE
+      ORDER BY opp_count DESC
+
+  - name: recent_feature_adoptions
+    question: Which accounts recently started using a new feature?
+    sql: >
+      SELECT pa.ACCOUNT_NAME, pa.FEATURE, pa.PRODUCT_CATEGORY, pa.USE_CASE,
+             pa.FIRST_USE_DATE, pa.DAYS_SINCE_FIRST_USE
+      FROM TEMP.JUSDAVIS.BKMNG_A360_PRODUCT_ADOPTION pa
+      WHERE pa.IS_NEW_30D = TRUE
+      ORDER BY pa.FIRST_USE_DATE DESC
+
+  - name: account_adoption_profile
+    question: What platform features does each account use?
+    sql: >
+      SELECT ACCOUNT_NAME, ADOPTION_SIGNAL_COUNT AS signal_count,
+             SIG_PIPELINE, SIG_TRANSFORMS, SIG_BI, SIG_COST,
+             SIG_COLLAB, SIG_OBS, SIG_AIML, SIG_SPCS
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      WHERE ADOPTION_SIGNAL_COUNT > 0
+      ORDER BY ADOPTION_SIGNAL_COUNT DESC
+
+  - name: accounts_missing_aiml
+    question: Which accounts haven't adopted AI/ML yet but have high consumption?
+    sql: >
+      SELECT a.ACCOUNT_NAME, a.ADOPTION_SIGNAL_COUNT AS signal_count,
+             a.TOTAL_CONSUMED_CREDITS AS rev_180d, a.WOW_PCT_CHANGE
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
+      WHERE a.SIG_AIML = 0
+        AND a.TOTAL_CONSUMED_CREDITS > 0
+      ORDER BY a.TOTAL_CONSUMED_CREDITS DESC
+      LIMIT 20
+
+  - name: feature_adoption_timeline
+    question: When did accounts first start using each feature?
+    sql: >
+      SELECT pa.ACCOUNT_NAME, pa.FEATURE, pa.PRODUCT_CATEGORY, pa.USE_CASE,
+             pa.FIRST_USE_DATE, pa.DAYS_SINCE_FIRST_USE, pa.IS_ACTIVE_30D
+      FROM TEMP.JUSDAVIS.BKMNG_A360_PRODUCT_ADOPTION pa
+      ORDER BY pa.FIRST_USE_DATE ASC
+
+  - name: contract_ending_soon
+    question: Which accounts have contracts ending in the next 120 days?
+    sql: >
+      SELECT ACCOUNT_NAME, CONTRACT_END_DATE, DAYS_UNTIL_CONTRACT_END,
+             NET_ACV, NET_TCV, IS_RENEWAL, DEAL_TYPE, REV_90D
+      FROM TEMP.JUSDAVIS.BKMNG_A360_CONTRACT
+      WHERE DAYS_UNTIL_CONTRACT_END <= 120 AND DAYS_UNTIL_CONTRACT_END > 0
+      ORDER BY DAYS_UNTIL_CONTRACT_END ASC
+
+  - name: consumption_trends
+    question: Which accounts have the biggest week-over-week consumption change?
+    sql: >
+      SELECT cn.ACCOUNT_NAME, cn.WOW_PCT_CHANGE, cn.MOM_PCT_CHANGE,
+             cn.REV_90D, cn.ACTIVE_DAYS_30D
+      FROM TEMP.JUSDAVIS.BKMNG_A360_CONSUMPTION cn
+      WHERE cn.WOW_PCT_CHANGE IS NOT NULL
+      ORDER BY ABS(cn.WOW_PCT_CHANGE) DESC
+      LIMIT 20
+
+  - name: aiml_adoption_by_account
+    question: Which accounts are actively using AI/ML features?
+    sql: >
+      SELECT ACCOUNT_NAME, PRODUCT_CATEGORY, USE_CASE, FEATURE,
+             FIRST_USE_DATE, IS_ACTIVE_30D, TOTAL_REVENUE_90D
+      FROM TEMP.JUSDAVIS.BKMNG_A360_PRODUCT_ADOPTION
+      WHERE PRODUCT_CATEGORY = 'AI/ML' AND IS_ACTIVE_30D = TRUE
+      ORDER BY ACCOUNT_NAME, USE_CASE, FEATURE
+
+  - name: open_critical_tickets
+    question: Which accounts have open Sev-1 or Sev-2 support tickets?
+    sql: >
+      SELECT ACCOUNT_NAME, CASE_NUMBER, SEVERITY, STATUS, DAYS_OPEN,
+             SUBJECT, ESCALATION_STATUS, SNOWFLAKE_ACCOUNT_ALIAS
+      FROM TEMP.JUSDAVIS.BKMNG_SUPPORT_TICKETS
+      WHERE IS_CLOSED = FALSE
+        AND (SEVERITY ILIKE '%severity-1%' OR SEVERITY ILIKE '%severity-2%')
+      ORDER BY CASE WHEN SEVERITY ILIKE '%severity-1%' THEN 0 ELSE 1 END,
+               DAYS_OPEN DESC
+
+  - name: support_ticket_summary_by_account
+    question: How many open support tickets does each account have?
+    sql: >
+      SELECT ACCOUNT_NAME,
+             COUNT(*) AS open_tickets,
+             SUM(CASE WHEN SEVERITY ILIKE '%severity-1%' THEN 1 ELSE 0 END) AS sev1,
+             SUM(CASE WHEN SEVERITY ILIKE '%severity-2%' THEN 1 ELSE 0 END) AS sev2,
+             SUM(CASE WHEN IS_ESCALATED = TRUE THEN 1 ELSE 0 END) AS escalated,
+             ROUND(AVG(DAYS_OPEN), 1) AS avg_days_open
+      FROM TEMP.JUSDAVIS.BKMNG_SUPPORT_TICKETS
+      WHERE IS_CLOSED = FALSE
+      GROUP BY ACCOUNT_NAME
+      ORDER BY sev1 DESC, sev2 DESC, open_tickets DESC
+
+  - name: splittable_use_cases
+    question: Which use cases can be split into smaller sub-use-cases?
+    sql: >
+      SELECT DISTINCT PARENT_USE_CASE_NAME, ACCOUNT_NAME, SPLITTABILITY_SCORE,
+             TOTAL_SUB_USE_CASES, OVERALL_RATIONALE, SPLITTABILITY_REASON
+      FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_BREAKDOWNS
+      WHERE SPLITTABILITY_SCORE >= 5
+      ORDER BY SPLITTABILITY_SCORE DESC
+
+  - name: use_case_breakdown_detail
+    question: What are the suggested sub-use-cases for a specific use case?
+    sql: >
+      SELECT PARENT_USE_CASE_NAME, ACCOUNT_NAME, SPLITTABILITY_SCORE,
+             SUB_USE_CASE_INDEX, SUB_USE_CASE_NAME, SUB_WORKLOAD,
+             SUB_TECHNICAL_USE_CASE, SUB_RATIONALE, SUB_ESTIMATED_EFFORT,
+             SUB_KEY_ACTIVITIES, OVERALL_RATIONALE
+      FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_BREAKDOWNS
+      ORDER BY PARENT_USE_CASE_NAME, SUB_USE_CASE_INDEX
+
+  - name: breakdown_by_account
+    question: What use case breakdowns exist for a specific account?
+    sql: >
+      SELECT PARENT_USE_CASE_NAME, SPLITTABILITY_SCORE, TOTAL_SUB_USE_CASES,
+             SUB_USE_CASE_NAME, SUB_WORKLOAD, SUB_TECHNICAL_USE_CASE,
+             SUB_ESTIMATED_EFFORT, OVERALL_RATIONALE
+      FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_BREAKDOWNS
+      ORDER BY SPLITTABILITY_SCORE DESC, PARENT_USE_CASE_NAME, SUB_USE_CASE_INDEX
+
+  - name: breakdown_workload_distribution
+    question: What workloads are most common in suggested sub-use-cases?
+    sql: >
+      SELECT SUB_WORKLOAD, COUNT(*) AS sub_uc_count,
+             COUNT(DISTINCT USE_CASE_ID) AS parent_uc_count
+      FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_BREAKDOWNS
+      GROUP BY SUB_WORKLOAD
+      ORDER BY sub_uc_count DESC
+
+  - name: eval_framework_criteria
+    question: What criteria are used to evaluate whether a use case should be split?
+    sql: >
+      SELECT FRAMEWORK_ID, LABEL, DESCRIPTION, WEIGHT
+      FROM TEMP.JUSDAVIS.BKMNG_EVAL_FRAMEWORK
+      WHERE CATEGORY = 'splittability' AND IS_ACTIVE = TRUE
+      ORDER BY WEIGHT DESC

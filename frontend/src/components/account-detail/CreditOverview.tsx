@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { LineChart, Line, ResponsiveContainer } from 'recharts'
 
 import { CreditBar, formatCredits } from '../accounts/CreditBar'
-import { getCreditSeriesForAccount } from '../../mocks/credits'
+import { useAccountCreditSeries } from '../../api/hooks'
 
 interface CreditOverviewProps {
   accountId: string
@@ -10,11 +10,9 @@ interface CreditOverviewProps {
 }
 
 export function CreditOverview({ accountId, allocated }: CreditOverviewProps) {
-  const sparkData = useMemo(
-    () => getCreditSeriesForAccount(accountId).slice(-30),
-    [accountId],
-  )
+  const { data: series = [] } = useAccountCreditSeries(accountId)
 
+  const sparkData = useMemo(() => series.slice(-30), [series])
   const lastEntry = sparkData[sparkData.length - 1]
   const used = lastEntry?.credits_used ?? 0
 

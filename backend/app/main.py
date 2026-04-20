@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import accounts, auth, forecasts, tmr
+from app.routers import accounts, auth, forecasts, tmr, misc, credit_series, admin, agent, nba, alerts, assessments, user
 
 app = FastAPI(
     title="BookManager API",
@@ -24,6 +24,14 @@ app.include_router(auth.router)
 app.include_router(accounts.router)
 app.include_router(forecasts.router)
 app.include_router(tmr.router)
+app.include_router(misc.router)
+app.include_router(credit_series.router)
+app.include_router(admin.router)
+app.include_router(agent.router)
+app.include_router(nba.router)
+app.include_router(alerts.router)
+app.include_router(assessments.router)
+app.include_router(user.router)
 
 
 @app.get("/health")

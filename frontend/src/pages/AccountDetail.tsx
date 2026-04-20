@@ -23,11 +23,13 @@ import {
   linkTypeIcon,
 } from '../components/accounts/AddInfoDropdown'
 
-import { MOCK_ACCOUNTS } from '../mocks/accounts'
-import { MOCK_USE_CASES } from '../mocks/useCases'
-import { MOCK_GONG_CALLS } from '../mocks/gongCalls'
-import { MOCK_ACCOUNT_RESOURCES } from '../mocks/accountResources'
-import { ACE_DISPLAY_NAMES } from '../mocks/aceDisplayNames'
+import {
+  useAccount,
+  useAccountUseCases,
+  useAccountGongCalls,
+  useAccountResources,
+  useAceDisplayNames,
+} from '../api/hooks'
 import { formatCredits } from '../components/accounts/CreditBar'
 
 import type { Account, AccountResource } from '../types'
@@ -58,14 +60,19 @@ export function AccountDetail() {
   const tabParam = searchParams.get('tab')
   const promptParam = searchParams.get('prompt')
 
-  const baseAccount = MOCK_ACCOUNTS.find((a) => a.account_id === accountId)
+  const { data: baseAccount, isLoading: accountLoading } = useAccount(accountId ?? '')
+  const { data: useCases = [] } = useAccountUseCases(accountId ?? '')
+  const { data: gongCallsRaw = [] } = useAccountGongCalls(accountId ?? '')
+  const { data: apiResources = [] } = useAccountResources(accountId ?? '')
+  const { data: aceDisplayNames = {} } = useAceDisplayNames()
+
   const [accountOverrides, setAccountOverrides] = useState<Map<string, Account>>(new Map())
 
   const account = accountOverrides.get(accountId ?? '') ?? baseAccount
 
   const [showAddCollab, setShowAddCollab] = useState(false)
 
-  const allAceIds = useMemo(() => Object.keys(ACE_DISPLAY_NAMES), [])
+  const allAceIds = useMemo(() => Object.keys(aceDisplayNames), [aceDisplayNames])
   const availableCollaborators = useMemo(() => {
     if (!account) return []
     const current = new Set([account.ace_assigned, ...account.collaborators])
@@ -85,28 +92,30 @@ export function AccountDetail() {
     setAccountOverrides((prev) => new Map(prev).set(account.account_id, updated))
   }
 
-  const useCases = useMemo(
-    () => MOCK_USE_CASES.filter((uc) => uc.account_id === accountId),
-    [accountId],
-  )
   const gongCalls = useMemo(
     () =>
-      MOCK_GONG_CALLS.filter((g) => g.account_id === accountId).sort(
+      [...gongCallsRaw].sort(
         (a, b) =>
           new Date(b.call_date).getTime() - new Date(a.call_date).getTime(),
       ),
-    [accountId],
+    [gongCallsRaw],
   )
 
-  const [resources, setResources] = useState<AccountResource[]>(
-    () => MOCK_ACCOUNT_RESOURCES,
-  )
+  const [localResources, setLocalResources] = useState<AccountResource[]>([])
   const accountResources = useMemo(
-    () => resources.filter((r) => r.account_id === accountId),
-    [resources, accountId],
+    () => [...apiResources, ...localResources].filter((r) => r.account_id === accountId),
+    [apiResources, localResources, accountId],
   )
 
   const [viewMode, setViewMode] = useState<ViewMode>(() => resolveInitialTab(tabParam))
+
+  if (accountLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-4 py-24">
+        <div className="animate-spin h-8 w-8 border-4 border-snow-500 border-t-transparent rounded-full" />
+      </div>
+    )
+  }
 
   if (!account) {
     return (
@@ -124,7 +133,7 @@ export function AccountDetail() {
   }
 
   function handleAddResource(resource: AccountResource) {
-    setResources((prev) => [resource, ...prev])
+    setLocalResources((prev) => [resource, ...prev])
   }
 
   const TAB_OPTIONS: { key: ViewMode; label: string; icon?: typeof Sparkles }[] = [
@@ -179,9 +188,9 @@ export function AccountDetail() {
 
           <span className="inline-flex items-center gap-1.5 rounded-full border border-snow-200 bg-snow-50 px-2.5 py-1 text-xs font-medium text-snow-700">
             <span className="flex h-5 w-5 items-center justify-center rounded-full bg-snow-500 text-[10px] font-bold text-white">
-              {(ACE_DISPLAY_NAMES[account.ace_assigned] ?? account.ace_assigned).split(' ').map((n) => n[0]).join('')}
+              {(aceDisplayNames[account.ace_assigned] ?? account.ace_assigned).split(' ').map((n) => n[0]).join('')}
             </span>
-            {ACE_DISPLAY_NAMES[account.ace_assigned] ?? account.ace_assigned}
+            {aceDisplayNames[account.ace_assigned] ?? account.ace_assigned}
             <span className="rounded bg-snow-100 px-1 py-0.5 text-[9px] uppercase tracking-wider text-snow-600">Primary</span>
           </span>
 
@@ -191,9 +200,9 @@ export function AccountDetail() {
               className="group inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700"
             >
               <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-400 text-[10px] font-bold text-white">
-                {(ACE_DISPLAY_NAMES[collabId] ?? collabId).split(' ').map((n) => n[0]).join('')}
+                {(aceDisplayNames[collabId] ?? collabId).split(' ').map((n) => n[0]).join('')}
               </span>
-              {ACE_DISPLAY_NAMES[collabId] ?? collabId}
+              {aceDisplayNames[collabId] ?? collabId}
               {(currentUser.role === 'acem' || currentUser.user_id === account.ace_assigned) && (
                 <button
                   onClick={() => handleRemoveCollaborator(collabId)}
@@ -224,9 +233,9 @@ export function AccountDetail() {
                       className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <span className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-400 text-[10px] font-bold text-white">
-                        {(ACE_DISPLAY_NAMES[aceId] ?? aceId).split(' ').map((n) => n[0]).join('')}
+                        {(aceDisplayNames[aceId] ?? aceId).split(' ').map((n) => n[0]).join('')}
                       </span>
-                      {ACE_DISPLAY_NAMES[aceId] ?? aceId}
+                      {aceDisplayNames[aceId] ?? aceId}
                     </button>
                   ))}
                 </div>

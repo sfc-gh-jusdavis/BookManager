@@ -12,14 +12,20 @@ build/
 
 # Node
 node_modules/
+node_modules_darwin_backup/
+.next/
 dist/
 .vite/
 *.tsbuildinfo
 
-# Environment
+# Environment / Secrets
 .env
 .env.local
 .env.*.local
+backend/.env
+*.pem
+*.key
+connections.toml
 
 # Docker
 docker-compose.override.yml
@@ -40,3 +46,9 @@ htmlcov/
 .coverage
 .pytest_cache/
 coverage/
+
+# Cortex Code local state
+.snowflake/
+
+# Plan files at root (keep in docs/plans/ instead)
+*.plan.md

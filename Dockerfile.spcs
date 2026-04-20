@@ -1,0 +1,38 @@
+FROM node:20-alpine AS frontend-build
+WORKDIR /app
+COPY bkmng-next/package*.json ./
+RUN rm -f package-lock.json && npm install
+COPY bkmng-next/ .
+RUN npm run build
+
+FROM python:3.11-slim AS spcs
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    ca-certificates \
+    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY backend/requirements.txt ./requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY backend/ ./backend/
+
+COPY --from=frontend-build /app/.next/standalone ./frontend/
+COPY --from=frontend-build /app/.next/static ./frontend/.next/static
+COPY --from=frontend-build /app/public ./frontend/public
+
+COPY start.sh /start.sh
+RUN chmod +x /start.sh
+
+ENV SPCS_MODE=true \
+    MOCK_DATA=true \
+    APP_ENV=production \
+    PYTHONUNBUFFERED=1 \
+    PORT=8080 \
+    HOSTNAME=0.0.0.0
+
+EXPOSE 8080
+CMD ["/start.sh"]

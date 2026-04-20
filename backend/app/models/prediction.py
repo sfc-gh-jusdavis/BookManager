@@ -37,6 +37,18 @@ class TMRSuccessPrediction(BaseModel):
     model_version: str
 
 
+class UseCaseForecast(BaseModel):
+    use_case_id: str
+    account_id: str
+    auto_category: str
+    override_category: Optional[str] = None
+    override_note: Optional[str] = None
+    override_by: Optional[str] = None
+    override_at: Optional[str] = None
+    pending_approval: bool = False
+    quarter: str
+
+
 class SimilarDeployment(BaseModel):
     deployment_id: str
     use_case_type: str

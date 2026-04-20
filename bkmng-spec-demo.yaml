@@ -1,0 +1,40 @@
+spec:
+  containers:
+    - name: bkmng
+      image: /bookmanager/demo/bkmng_repo/bkmng:latest
+      env:
+        SPCS_MODE: "true"
+        MOCK_DATA: "false"
+        APP_ENV: "production"
+        ADMIN_USERS: ""
+        SPCS_DEFAULT_USER_ID: "jusdavis"
+        SNOWFLAKE_ACCOUNT: "sfcogsops-snowhouse-aws-us-west-2"
+        SNOWFLAKE_USER: "JUSDAVIS"
+        SNOWFLAKE_WAREHOUSE: "SE_XS_WH"
+        SNOWFLAKE_DATABASE: "TEMP"
+        SNOWFLAKE_SCHEMA: "JUSDAVIS"
+        SNOWFLAKE_ROLE: "SALES_ENGINEER"
+      secrets:
+        - snowflakeSecret:
+            objectName: "BOOKMANAGER.DEMO.BKMNG_SNOWHOUSE_PAT"
+          envVarName: "SNOWFLAKE_PAT"
+      resources:
+        requests:
+          cpu: "0.1"
+          memory: "128Mi"
+        limits:
+          cpu: "0.5"
+          memory: "512Mi"
+      readinessProbe:
+        port: 8080
+        path: /api/auth/mode
+
+  endpoints:
+    - name: bkmng-ui
+      port: 8080
+      public: true
+
+  platformMonitor:
+    metricConfig:
+      groups:
+        - system
