@@ -150,6 +150,23 @@ These are populated by API calls, not tasks. Do not create tasks for them:
 - `SNOWFLAKE.CORTEX.SUMMARIZE()` can fail on very long text — SP_REFRESH_BKMNG_USE_CASES truncates to 8000 chars.
 - Snowflake `CONCAT_WS` returns NULL if any arg is NULL — use `ARRAY_TO_STRING(ARRAY_COMPACT(ARRAY_CONSTRUCT(...)))` instead.
 
+## SPCS Network Rules
+
+SPCS containers are network-isolated. The service has an External Access Integration:
+
+- Network Rule: `BOOKMANAGER.DEMO.BKMNG_SNOWHOUSE_RULE` (HOST_PORT EGRESS :443)
+- Hosts: `sfcogsops-snowhouse-aws-us-west-2.snowflakecomputing.com:443`, `sfc-ds2-customer-stage.s3.us-west-2.amazonaws.com:443`
+- EAI: `BKMNG_SNOWHOUSE_EAI` — attached via `ALTER SERVICE ... SET EXTERNAL_ACCESS_INTEGRATIONS = (BKMNG_SNOWHOUSE_EAI);`
+- After updating network rules: must SUSPEND + RESUME the service
+- The S3 host is required for large query result sets (fetched via presigned URL)
+
+## GitHub Repository
+
+- Remote: `https://github.com/sfc-gh-jusdavis/BookManager` (private)
+- Branch strategy: trunk-based, `main` is always deployable
+- Git config: `redacted@example.com` / `Justin Davis`
+- Plans archive: `docs/plans/` (48 historical design docs from Playground era)
+
 ## Extended Context
 
 For full operational details, known bugs, table schemas, SP details, and session history, see `/memories/bookmanager-ops.md` and `/memories/bookmanager_progress.md`.

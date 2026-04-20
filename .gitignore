@@ -47,8 +47,9 @@ htmlcov/
 .pytest_cache/
 coverage/
 
-# Cortex Code local state
+# Cortex Code local state (plans are stored per-session, not committed)
 .snowflake/
+# .cortex/ is intentionally NOT excluded — project commands and context rules are committed
 
 # Plan files at root (keep in docs/plans/ instead)
 *.plan.md
