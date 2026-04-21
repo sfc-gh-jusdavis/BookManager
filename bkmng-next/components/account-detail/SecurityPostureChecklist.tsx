@@ -21,6 +21,7 @@ import {
   MessageSquare,
   X,
   Save,
+  AlertTriangle,
 } from "lucide-react";
 
 const STATUS_CONFIG: Record<string, { icon: typeof ShieldCheck; color: string; label: string }> = {
@@ -71,6 +72,10 @@ function TierSection({
   const met = tier.milestones.filter((m) => m.status === "complete").length;
   const applicable = tier.milestones.filter((m) => m.status !== "not_applicable").length;
 
+  const noTelemetry = tier.milestones
+    .filter((m) => m.status !== "not_applicable")
+    .every((m) => m.raw_value?.no_source_data === 1);
+
   return (
     <div className="rounded-lg border border-slate-200 bg-white overflow-hidden">
       <button
@@ -93,10 +98,21 @@ function TierSection({
         />
       </button>
       {open && (
-        <div className="border-t border-slate-100 divide-y divide-slate-50">
-          {tier.milestones.map((m) => (
-            <MilestoneRow key={m.id} milestone={m} accountId={accountId} />
-          ))}
+        <div className="border-t border-slate-100">
+          {noTelemetry && (
+            <div className="flex items-start gap-2 mx-3 mt-3 px-3 py-2.5 bg-amber-50 border border-amber-100 rounded-md text-[11px] text-amber-700">
+              <AlertTriangle size={12} className="text-amber-500 shrink-0 mt-0.5" />
+              <span>
+                No Snowflake telemetry available for this account — controls cannot be assessed
+                from data alone. Verify directly with customer.
+              </span>
+            </div>
+          )}
+          <div className="divide-y divide-slate-50">
+            {tier.milestones.map((m) => (
+              <MilestoneRow key={m.id} milestone={m} accountId={accountId} />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -120,6 +136,9 @@ function MilestoneRow({
 
   const cfg = STATUS_CONFIG[m.status] || STATUS_CONFIG.not_started;
   const Icon = cfg.icon;
+  const disclaimer = m.raw_value?.disclaimer as string | undefined;
+  const dataConfidence = m.raw_value?.data_confidence as string | undefined;
+  const showDisclaimer = dataConfidence && dataConfidence !== "high";
 
   const handleSave = () => {
     saveOverride(
@@ -141,6 +160,9 @@ function MilestoneRow({
       >
         <Icon size={15} className={cfg.color} />
         <span className="text-xs text-slate-700 flex-1">{m.name}</span>
+        {showDisclaimer && (
+          <AlertTriangle size={11} className="text-amber-400 shrink-0" aria-label={disclaimer} />
+        )}
         {m.industry_required && (
           <span className="text-[8px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-50 text-red-500 border border-red-100">
             required
@@ -171,11 +193,19 @@ function MilestoneRow({
           )}
           {!m.llm_summary && m.raw_value && (
             <div className="text-[10px] text-slate-400 flex flex-wrap gap-2">
-              {Object.entries(m.raw_value).map(([k, v]) => (
-                <span key={k} className="bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
-                  {k}: {String(v)}
-                </span>
-              ))}
+              {Object.entries(m.raw_value)
+                .filter(([k]) => k !== "disclaimer" && k !== "data_confidence")
+                .map(([k, v]) => (
+                  <span key={k} className="bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">
+                    {k}: {String(v)}
+                  </span>
+                ))}
+            </div>
+          )}
+          {showDisclaimer && disclaimer && (
+            <div className="flex items-start gap-1.5 text-[10px] text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-2">
+              <AlertTriangle size={10} className="text-amber-500 shrink-0 mt-0.5" />
+              <span>{disclaimer}</span>
             </div>
           )}
           {m.ace_override && (

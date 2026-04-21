@@ -59,6 +59,156 @@ ALERT_CATALOG = [
         "category": "use_case",
         "default_priority": "low",
     },
+    {
+        "signal_type": "blocker",
+        "label": "Use Case Blocked",
+        "description": (
+            "Fires when a use case status is set to Blocked in Salesforce."
+        ),
+        "how_generated": (
+            "Checked daily during signal refresh. Queries BKMNG_ONT_USE_CASES "
+            "where STATUS = 'Blocked'. Scoped to your assigned accounts."
+        ),
+        "category": "use_case",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "open_tmr",
+        "label": "Open TMR",
+        "description": (
+            "Fires when a Technical Migration Request is open and not yet resolved."
+        ),
+        "how_generated": (
+            "Checked daily during signal refresh. Queries BKMNG_TMRS where STATUS "
+            "is not Closed, Cancelled, or Completed. Scoped to your assigned accounts."
+        ),
+        "category": "use_case",
+        "default_priority": "medium",
+    },
+    {
+        "signal_type": "no_interaction_14d",
+        "label": "No Call in 14+ Days",
+        "description": (
+            "Fires when no external interaction has been logged for an account "
+            "in 14 or more days."
+        ),
+        "how_generated": (
+            "Checked daily. Based on DAYS_SINCE_LAST_INTERACTION from BKMNG_ONT_ACCOUNTS. "
+            "Also fires if the account has active use cases but no interaction ever recorded."
+        ),
+        "category": "engagement",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "no_upcoming_meeting",
+        "label": "No Meeting Scheduled",
+        "description": (
+            "Fires when no meeting is scheduled in the next 14 days and the last "
+            "meeting was more than 14 days ago."
+        ),
+        "how_generated": (
+            "Checked daily. Cross-references BKMNG_MEETING_ACTIVITY for upcoming "
+            "and past activity. Excludes accounts in Churned or Renewal status."
+        ),
+        "category": "engagement",
+        "default_priority": "medium",
+    },
+    {
+        "signal_type": "email_silence",
+        "label": "Email Silence",
+        "description": (
+            "Fires when there have been zero emails exchanged with an account "
+            "in the past 14 days."
+        ),
+        "how_generated": (
+            "Checked daily. Queries BKMNG_EMAIL_ACTIVITY where EMAILS_LAST_14D = 0. "
+            "Excludes accounts in Churned or Renewal status."
+        ),
+        "category": "engagement",
+        "default_priority": "medium",
+    },
+    {
+        "signal_type": "new_feature_adoption",
+        "label": "Feature Adoption",
+        "description": (
+            "Fires when an account has adopted one or more new Snowflake features "
+            "in the last 30 days."
+        ),
+        "how_generated": (
+            "Checked daily. Queries BKMNG_A360_PRODUCT_ADOPTION for IS_NEW_30D = TRUE. "
+            "One signal per account listing all newly adopted features."
+        ),
+        "category": "engagement",
+        "default_priority": "low",
+    },
+    {
+        "signal_type": "consumption_spike",
+        "label": "Consumption Spike",
+        "description": (
+            "Fires when week-over-week Snowflake usage increases by 30% or more "
+            "at accounts with meaningful revenue."
+        ),
+        "how_generated": (
+            "Checked daily. Requires WoW change >= 30% and revenue last week >= $350 "
+            "from BKMNG_A360_CONSUMPTION. Lower-revenue ramp accounts use a separate "
+            "lower-priority tier."
+        ),
+        "category": "consumption",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "capacity_warning",
+        "label": "Capacity Warning",
+        "description": (
+            "Fires when an account reaches 75% or more of their contracted "
+            "compute capacity. Priority escalates to high at 100%+."
+        ),
+        "how_generated": (
+            "Checked daily. Based on CONTRACT_UTILIZATION_PCT in BKMNG_ONT_ACCOUNTS. "
+            "High priority fires at >= 100% utilization."
+        ),
+        "category": "consumption",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "contract_ending",
+        "label": "Contract Ending",
+        "description": (
+            "Fires when a contract end date is within 60 days."
+        ),
+        "how_generated": (
+            "Checked daily. Queries BKMNG_A360_CONTRACT where DAYS_UNTIL_CONTRACT_END "
+            "<= 60 and > 0."
+        ),
+        "category": "consumption",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "open_sev1_ticket",
+        "label": "Sev-1 Ticket",
+        "description": (
+            "Fires when an account has an open Severity 1 support ticket."
+        ),
+        "how_generated": (
+            "Populated by the support signal refresh from Salesforce support data. "
+            "Scoped to your assigned accounts."
+        ),
+        "category": "support",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "escalated_ticket",
+        "label": "Escalated Ticket",
+        "description": (
+            "Fires when a support ticket at an account has been escalated."
+        ),
+        "how_generated": (
+            "Populated by the support signal refresh from Salesforce support data. "
+            "Scoped to your assigned accounts."
+        ),
+        "category": "support",
+        "default_priority": "high",
+    },
 ]
 
 

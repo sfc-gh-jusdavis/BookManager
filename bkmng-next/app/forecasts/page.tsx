@@ -64,8 +64,8 @@ function fmtK(n: number | null | undefined): string {
 function UtilBar({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-xs text-slate-400">No contract</span>;
   const clamped = Math.min(pct, 120);
-  const barColor = pct >= 100 ? "bg-red-500" : pct >= 80 ? "bg-amber-400" : "bg-emerald-500";
-  const textColor = pct >= 100 ? "text-red-600 font-semibold" : pct >= 80 ? "text-amber-600" : "text-slate-600";
+  const barColor = pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-sky-400" : pct >= 25 ? "bg-amber-400" : "bg-red-400";
+  const textColor = pct >= 100 ? "text-emerald-600 font-semibold" : pct >= 75 ? "text-sky-600" : pct >= 25 ? "text-amber-600" : "text-red-500";
   return (
     <div className="flex items-center gap-2 min-w-[110px]">
       <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
