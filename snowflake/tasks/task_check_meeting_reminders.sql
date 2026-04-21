@@ -1,0 +1,7 @@
+-- TASK: TEMP.JUSDAVIS.TASK_CHECK_MEETING_REMINDERS  |  created: 2026-04-09 23:23:48.834000+00:00
+
+create or replace task TASK_CHECK_MEETING_REMINDERS
+	warehouse=SE_XS_WH
+	schedule='USING CRON 0 * * * * UTC'
+	COMMENT='Hourly: create BKMNG_USER_ALERTS for meetings with no notes after 24h'
+	as CALL TEMP.JUSDAVIS.SP_CHECK_MEETING_REMINDERS();

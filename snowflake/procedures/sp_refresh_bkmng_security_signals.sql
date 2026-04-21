@@ -1,0 +1,35 @@
+-- PROCEDURE: TEMP.JUSDAVIS.SP_REFRESH_BKMNG_SECURITY_SIGNALS()  |  created: 2026-04-16 19:55:08.233000+00:00
+
+CREATE OR REPLACE PROCEDURE "SP_REFRESH_BKMNG_SECURITY_SIGNALS"()
+RETURNS VARCHAR
+LANGUAGE SQL
+EXECUTE AS CALLER
+AS '
+BEGIN
+
+DELETE FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS WHERE SOURCE = ''security_posture'';
+
+INSERT INTO TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+    (SIGNAL_ID, ACCOUNT_ID, ACCOUNT_NAME, SIGNAL_TYPE, PRIORITY, SIGNAL_TEXT, CONTEXT, ENTITY_TYPE, ENTITY_ID, CREATED_AT, SOURCE, CATEGORY, ALERT_ELIGIBLE)
+SELECT
+    ''secgap-'' || sp.ACCOUNT_ID || ''-'' || sp.MILESTONE_ID AS SIGNAL_ID,
+    sp.ACCOUNT_ID,
+    sp.ACCOUNT_NAME,
+    CASE WHEN sp.PRIORITY = ''critical'' THEN ''security_gap_critical'' ELSE ''security_gap_high'' END AS SIGNAL_TYPE,
+    CASE WHEN sp.PRIORITY = ''critical'' THEN ''high'' ELSE ''medium'' END AS PRIORITY,
+    sp.ACCOUNT_NAME || '': '' || sp.MILESTONE_NAME || '' is '' || REPLACE(sp.STATUS, ''_'', '' '') || '' (industry required)'' AS SIGNAL_TEXT,
+    ''Milestone: '' || sp.MILESTONE_NAME || ''. Tier: '' || sp.TIER || ''. Status: '' || sp.STATUS || ''. Industry: '' || sp.INDUSTRY || ''. Service Level: '' || sp.SERVICE_LEVEL || ''. Raw: '' || COALESCE(sp.RAW_VALUE::VARCHAR, ''{}'') AS CONTEXT,
+    ''account'' AS ENTITY_TYPE,
+    sp.ACCOUNT_ID AS ENTITY_ID,
+    CURRENT_TIMESTAMP() AS CREATED_AT,
+    ''security_posture'' AS SOURCE,
+    ''security'' AS CATEGORY,
+    CASE WHEN sp.PRIORITY = ''critical'' THEN TRUE ELSE FALSE END AS ALERT_ELIGIBLE
+FROM TEMP.JUSDAVIS.BKMNG_SECURITY_POSTURE sp
+WHERE sp.STATUS IN (''not_started'', ''partial'')
+  AND sp.INDUSTRY_PRIORITY = ''required''
+  AND sp.PRIORITY IN (''critical'', ''high'');
+
+RETURN ''OK: '' || (SELECT COUNT(*)::VARCHAR FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS WHERE SOURCE = ''security_posture'') || '' security signals'';
+END;
+';
