@@ -3143,125 +3143,6 @@ Respond with ONLY this JSON:
         return {"signals": signals, "features": features}
 
 
-# ------------------------------------------------------------------
-# Row → model helpers
-# ------------------------------------------------------------------
-
-def _row_to_account(r: dict) -> Account:
-    return Account(
-        account_id=r["ACCOUNT_ID"],
-        account_name=r["ACCOUNT_NAME"],
-        industry=r.get("INDUSTRY"),
-        region=r.get("REGION"),
-        ace_assigned=r.get("ACE_ASSIGNED") or "",
-        engagement_status=r.get("ENGAGEMENT_STATUS") or "Normal",
-        status=r.get("STATUS") or "Active",
-        use_case_count=int(r.get("USE_CASE_COUNT") or 0),
-        total_credits_allocated=float(r["TOTAL_CREDITS_ALLOCATED"]) if r.get("TOTAL_CREDITS_ALLOCATED") else None,
-        activation_start_date=_d(r.get("ACTIVATION_START_DATE")),
-        acv=float(r["ACV"]) if r.get("ACV") else None,
-        consumption_ytd=float(r["CONSUMPTION_YTD"]) if r.get("CONSUMPTION_YTD") else None,
-        sig_pipeline=float(r["SIG_PIPELINE"]) if r.get("SIG_PIPELINE") is not None else None,
-        sig_aiml=float(r["SIG_AIML"]) if r.get("SIG_AIML") is not None else None,
-        health_score=float(r["HEALTH_SCORE"]) if r.get("HEALTH_SCORE") is not None else None,
-        momentum=r.get("MOMENTUM"),
-        wow_pct_change=float(r["WOW_PCT_CHANGE"]) if r.get("WOW_PCT_CHANGE") is not None else None,
-        new_adoption_30d=r.get("NEW_ADOPTION_30D"),
-        meetings_last_30d=int(r.get("MEETINGS_LAST_30D") or 0),
-        upcoming_meetings_5d=int(r.get("UPCOMING_MEETINGS_5D") or 0),
-        last_meeting_date=_d(r.get("LAST_MEETING_DATE")),
-        emails_last_30d=int(r.get("EMAILS_LAST_30D") or 0),
-        last_email_date=_d(r.get("LAST_EMAIL_DATE")),
-        email_trend=r.get("EMAIL_TREND"),
-        no_recording=bool(r.get("NO_RECORDING") or False),
-        lead_se_email=r.get("LEAD_SE_EMAIL"),
-        ae_email=r.get("AE_EMAIL"),
-    )
-
-
-def _row_to_use_case(r: dict) -> UseCase:
-    notes_text = r.get("NOTES")
-    ps_notes: list[PSNote] = []
-    if notes_text:
-        ps_notes = [PSNote(
-            note_id=r["USE_CASE_ID"] + "_note",
-            use_case_id=r["USE_CASE_ID"],
-            author_id="SE Team",
-            content=notes_text,
-            created_at=_dt(r.get("LAST_MODIFIED_DATE")) or datetime.utcnow(),
-        )]
-    return UseCase(
-        use_case_id=r["USE_CASE_ID"],
-        account_id=r["ACCOUNT_ID"],
-        account_name=r.get("ACCOUNT_NAME") or "",
-        use_case_name=r.get("USE_CASE_NAME") or "",
-        description=r.get("DESCRIPTION") or "",
-        status=r.get("STATUS") or "Unknown",
-        ps_notes=ps_notes,
-        ps_notes_summary=r.get("PS_NOTES_SUMMARY"),
-        go_live_date=_d(r.get("GO_LIVE_DATE")),
-        target_go_live_date=_d(r.get("TARGET_GO_LIVE_DATE")),
-        lead_se=r.get("LEAD_SE") or "",
-        ace_assigned=r.get("ACE_ASSIGNED") or "",
-        created_date=_d(r.get("CREATED_DATE")),
-        last_modified_date=_dt(r.get("LAST_MODIFIED_DATE")),
-        last_note_date=_dt(r.get("LAST_NOTE_DATE")),
-        stage=r.get("STAGE") or "Unknown",
-        complexity=r.get("COMPLEXITY"),
-        notes=r.get("NOTES"),
-        meddpicc_overall_score=float(r["MEDDPICC_OVERALL_SCORE"]) if r.get("MEDDPICC_OVERALL_SCORE") else None,
-        meddpicc_metrics_score=float(r["MEDDPICC_METRICS_SCORE"]) if r.get("MEDDPICC_METRICS_SCORE") else None,
-        meddpicc_metrics=r.get("MEDDPICC_METRICS"),
-        meddpicc_economic_buyer_score=float(r["MEDDPICC_ECONOMIC_BUYER_SCORE"]) if r.get("MEDDPICC_ECONOMIC_BUYER_SCORE") else None,
-        meddpicc_economic_buyer=r.get("MEDDPICC_ECONOMIC_BUYER"),
-        meddpicc_decision_criteria_score=float(r["MEDDPICC_DECISION_CRITERIA_SCORE"]) if r.get("MEDDPICC_DECISION_CRITERIA_SCORE") else None,
-        meddpicc_decision_criteria=r.get("MEDDPICC_DECISION_CRITERIA"),
-        meddpicc_decision_process_score=float(r["MEDDPICC_DECISION_PROCESS_SCORE"]) if r.get("MEDDPICC_DECISION_PROCESS_SCORE") else None,
-        meddpicc_decision_process=r.get("MEDDPICC_DECISION_PROCESS"),
-        meddpicc_identify_pain_score=float(r["MEDDPICC_IDENTIFY_PAIN_SCORE"]) if r.get("MEDDPICC_IDENTIFY_PAIN_SCORE") else None,
-        meddpicc_identify_pain=r.get("MEDDPICC_IDENTIFY_PAIN"),
-        meddpicc_champion_score=float(r["MEDDPICC_CHAMPION_SCORE"]) if r.get("MEDDPICC_CHAMPION_SCORE") else None,
-        meddpicc_champion=r.get("MEDDPICC_CHAMPION"),
-        implementation_start_date=_d(r.get("IMPLEMENTATION_START_DATE")),
-        meddpicc_competitor_score=float(r["MEDDPICC_COMPETITOR_SCORE"]) if r.get("MEDDPICC_COMPETITOR_SCORE") else None,
-        meddpicc_competitors=r.get("MEDDPICC_COMPETITORS"),
-    )
-
-
-def _derive_forecast(uc: UseCase) -> UseCaseForecast:
-    status_lower = (uc.status or "").lower()
-    stage_lower = (uc.stage or "").lower()
-
-    if status_lower == "blocked" or "blocked" in stage_lower:
-        auto_cat = "Stretch"
-    elif any(s in stage_lower for s in ("go-live", "deployed", "won", "implementation")):
-        auto_cat = "Commit"
-    elif any(s in stage_lower for s in ("pursuit", "technical", "5 -", "6 -")):
-        auto_cat = "Most Likely"
-    else:
-        auto_cat = "Stretch"
-
-    d = uc.go_live_date or uc.target_go_live_date
-    if d:
-        m = d.month if isinstance(d, date) else int(str(d).split("-")[1])
-        y = d.year if isinstance(d, date) else int(str(d).split("-")[0])
-        q = (m - 1) // 3 + 1
-        quarter = f"Q{q}-{y}"
-    else:
-        quarter = "Q2-2026"
-
-    return UseCaseForecast(
-        use_case_id=uc.use_case_id,
-        account_id=uc.account_id,
-        auto_category=auto_cat,
-        override_category=None,
-        override_note=None,
-        override_by=None,
-        override_at=None,
-        pending_approval=False,
-        quarter=quarter,
-    )
-
     def get_security_posture(self, account_id: str) -> dict:
         cur = self._cursor()
         cur.execute(
@@ -3396,4 +3277,124 @@ def _derive_forecast(uc: UseCase) -> UseCaseForecast:
             "DELETE FROM BKMNG_SECURITY_POSTURE_OVERRIDES WHERE ACCOUNT_ID = %s AND MILESTONE_ID = %s",
             (account_id, milestone_id),
         )
+
+
+# ------------------------------------------------------------------
+# Row → model helpers
+# ------------------------------------------------------------------
+
+def _row_to_account(r: dict) -> Account:
+    return Account(
+        account_id=r["ACCOUNT_ID"],
+        account_name=r["ACCOUNT_NAME"],
+        industry=r.get("INDUSTRY"),
+        region=r.get("REGION"),
+        ace_assigned=r.get("ACE_ASSIGNED") or "",
+        engagement_status=r.get("ENGAGEMENT_STATUS") or "Normal",
+        status=r.get("STATUS") or "Active",
+        use_case_count=int(r.get("USE_CASE_COUNT") or 0),
+        total_credits_allocated=float(r["TOTAL_CREDITS_ALLOCATED"]) if r.get("TOTAL_CREDITS_ALLOCATED") else None,
+        activation_start_date=_d(r.get("ACTIVATION_START_DATE")),
+        acv=float(r["ACV"]) if r.get("ACV") else None,
+        consumption_ytd=float(r["CONSUMPTION_YTD"]) if r.get("CONSUMPTION_YTD") else None,
+        sig_pipeline=float(r["SIG_PIPELINE"]) if r.get("SIG_PIPELINE") is not None else None,
+        sig_aiml=float(r["SIG_AIML"]) if r.get("SIG_AIML") is not None else None,
+        health_score=float(r["HEALTH_SCORE"]) if r.get("HEALTH_SCORE") is not None else None,
+        momentum=r.get("MOMENTUM"),
+        wow_pct_change=float(r["WOW_PCT_CHANGE"]) if r.get("WOW_PCT_CHANGE") is not None else None,
+        new_adoption_30d=r.get("NEW_ADOPTION_30D"),
+        meetings_last_30d=int(r.get("MEETINGS_LAST_30D") or 0),
+        upcoming_meetings_5d=int(r.get("UPCOMING_MEETINGS_5D") or 0),
+        last_meeting_date=_d(r.get("LAST_MEETING_DATE")),
+        emails_last_30d=int(r.get("EMAILS_LAST_30D") or 0),
+        last_email_date=_d(r.get("LAST_EMAIL_DATE")),
+        email_trend=r.get("EMAIL_TREND"),
+        no_recording=bool(r.get("NO_RECORDING") or False),
+        lead_se_email=r.get("LEAD_SE_EMAIL"),
+        ae_email=r.get("AE_EMAIL"),
+    )
+
+
+def _row_to_use_case(r: dict) -> UseCase:
+    notes_text = r.get("NOTES")
+    ps_notes: list[PSNote] = []
+    if notes_text:
+        ps_notes = [PSNote(
+            note_id=r["USE_CASE_ID"] + "_note",
+            use_case_id=r["USE_CASE_ID"],
+            author_id="SE Team",
+            content=notes_text,
+            created_at=_dt(r.get("LAST_MODIFIED_DATE")) or datetime.utcnow(),
+        )]
+    return UseCase(
+        use_case_id=r["USE_CASE_ID"],
+        account_id=r["ACCOUNT_ID"],
+        account_name=r.get("ACCOUNT_NAME") or "",
+        use_case_name=r.get("USE_CASE_NAME") or "",
+        description=r.get("DESCRIPTION") or "",
+        status=r.get("STATUS") or "Unknown",
+        ps_notes=ps_notes,
+        ps_notes_summary=r.get("PS_NOTES_SUMMARY"),
+        go_live_date=_d(r.get("GO_LIVE_DATE")),
+        target_go_live_date=_d(r.get("TARGET_GO_LIVE_DATE")),
+        lead_se=r.get("LEAD_SE") or "",
+        ace_assigned=r.get("ACE_ASSIGNED") or "",
+        created_date=_d(r.get("CREATED_DATE")),
+        last_modified_date=_dt(r.get("LAST_MODIFIED_DATE")),
+        last_note_date=_dt(r.get("LAST_NOTE_DATE")),
+        stage=r.get("STAGE") or "Unknown",
+        complexity=r.get("COMPLEXITY"),
+        notes=r.get("NOTES"),
+        meddpicc_overall_score=float(r["MEDDPICC_OVERALL_SCORE"]) if r.get("MEDDPICC_OVERALL_SCORE") else None,
+        meddpicc_metrics_score=float(r["MEDDPICC_METRICS_SCORE"]) if r.get("MEDDPICC_METRICS_SCORE") else None,
+        meddpicc_metrics=r.get("MEDDPICC_METRICS"),
+        meddpicc_economic_buyer_score=float(r["MEDDPICC_ECONOMIC_BUYER_SCORE"]) if r.get("MEDDPICC_ECONOMIC_BUYER_SCORE") else None,
+        meddpicc_economic_buyer=r.get("MEDDPICC_ECONOMIC_BUYER"),
+        meddpicc_decision_criteria_score=float(r["MEDDPICC_DECISION_CRITERIA_SCORE"]) if r.get("MEDDPICC_DECISION_CRITERIA_SCORE") else None,
+        meddpicc_decision_criteria=r.get("MEDDPICC_DECISION_CRITERIA"),
+        meddpicc_decision_process_score=float(r["MEDDPICC_DECISION_PROCESS_SCORE"]) if r.get("MEDDPICC_DECISION_PROCESS_SCORE") else None,
+        meddpicc_decision_process=r.get("MEDDPICC_DECISION_PROCESS"),
+        meddpicc_identify_pain_score=float(r["MEDDPICC_IDENTIFY_PAIN_SCORE"]) if r.get("MEDDPICC_IDENTIFY_PAIN_SCORE") else None,
+        meddpicc_identify_pain=r.get("MEDDPICC_IDENTIFY_PAIN"),
+        meddpicc_champion_score=float(r["MEDDPICC_CHAMPION_SCORE"]) if r.get("MEDDPICC_CHAMPION_SCORE") else None,
+        meddpicc_champion=r.get("MEDDPICC_CHAMPION"),
+        implementation_start_date=_d(r.get("IMPLEMENTATION_START_DATE")),
+        meddpicc_competitor_score=float(r["MEDDPICC_COMPETITOR_SCORE"]) if r.get("MEDDPICC_COMPETITOR_SCORE") else None,
+        meddpicc_competitors=r.get("MEDDPICC_COMPETITORS"),
+    )
+
+
+def _derive_forecast(uc: UseCase) -> UseCaseForecast:
+    status_lower = (uc.status or "").lower()
+    stage_lower = (uc.stage or "").lower()
+
+    if status_lower == "blocked" or "blocked" in stage_lower:
+        auto_cat = "Stretch"
+    elif any(s in stage_lower for s in ("go-live", "deployed", "won", "implementation")):
+        auto_cat = "Commit"
+    elif any(s in stage_lower for s in ("pursuit", "technical", "5 -", "6 -")):
+        auto_cat = "Most Likely"
+    else:
+        auto_cat = "Stretch"
+
+    d = uc.go_live_date or uc.target_go_live_date
+    if d:
+        m = d.month if isinstance(d, date) else int(str(d).split("-")[1])
+        y = d.year if isinstance(d, date) else int(str(d).split("-")[0])
+        q = (m - 1) // 3 + 1
+        quarter = f"Q{q}-{y}"
+    else:
+        quarter = "Q2-2026"
+
+    return UseCaseForecast(
+        use_case_id=uc.use_case_id,
+        account_id=uc.account_id,
+        auto_category=auto_cat,
+        override_category=None,
+        override_note=None,
+        override_by=None,
+        override_at=None,
+        pending_approval=False,
+        quarter=quarter,
+    )
 

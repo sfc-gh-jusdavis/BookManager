@@ -104,7 +104,7 @@ function SpendBar({ rev }: { rev: RevenueSummary | undefined }) {
     return <span className="text-xs text-slate-400">—</span>;
   }
   const pct = Math.min((rev.total_consumed_revenue / rev.contract_capacity) * 100, 100);
-  const barColor = pct >= 90 ? "bg-red-400" : pct >= 70 ? "bg-amber-400" : "bg-sky-400";
+  const barColor = pct >= 100 ? "bg-emerald-500" : pct >= 75 ? "bg-sky-400" : pct >= 25 ? "bg-amber-400" : "bg-red-400";
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-20 rounded-full bg-slate-100 overflow-hidden">

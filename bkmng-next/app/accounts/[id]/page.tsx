@@ -4,20 +4,20 @@ import { useMemo, useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import {
-  ArrowLeft, Calendar, MapPin, Users, Clock, Plus, FileText, PhoneCall, Sparkles, Bookmark, BookmarkCheck, Archive, ChevronDown, Cpu,
-  CalendarCheck2, Mail, TrendingDown, TrendingUp, AlertTriangle, VideoOff, Video, RefreshCw, Layers,
+  ArrowLeft, Calendar, MapPin, Users, Clock, Plus, FileText, Sparkles, Bookmark, BookmarkCheck, Archive, ChevronDown, Cpu,
+  CalendarCheck2, Mail, TrendingDown, TrendingUp, AlertTriangle, VideoOff, Video, RefreshCw, Layers, BarChart3, List,
 } from "lucide-react";
 import {
   useAccount, useAccountUseCases, useAccountGongCalls,
-  useAccountResources, useAceDisplayNames, useAccountRevenueSummary, useTMRs,
+  useAceDisplayNames, useAccountRevenueSummary,
   useAccountTracking, useSetAccountTracking, useDeleteAccountTracking,
   useAccountAdoption, useMeetingActivity, useEmailActivity,
   useUpdateAccountFields, useAccountContext, useAddAccountContext, useAccountBriefing,
   useRefreshAccount,
   useAddTimelineContext, useDeleteTimelineContext,
-  useAccountBreakdowns,
+  useAccountBreakdowns, useAccountAlerts, useMarkAlertRead, useDismissAlert,
 } from "@/hooks/useApi";
-import type { GongCall, TMR, AccountAdoptionData, MeetingActivity, EmailActivity, ContextNote, AccountBriefing, UseCaseBreakdownItem } from "@/hooks/useApi";
+import type { GongCall, AccountAdoptionData, MeetingActivity, EmailActivity, ContextNote, AccountBriefing, UseCaseBreakdownItem, AlertItem } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesTimeline } from "@/components/account-detail/NotesTimeline";
 import { AIChatPanel } from "@/components/account-detail/AIChatPanel";
@@ -259,8 +259,108 @@ const WORKLOAD_COLORS: Record<string, string> = {
   "Applications/SPCS": "bg-pink-50 text-pink-700 border-pink-200",
 };
 
+const WORKLOAD_BAR_COLORS: Record<string, string> = {
+  "Data Engineering": "#60a5fa",
+  "AI/ML": "#c084fc",
+  "Data Warehouse/Analytics": "#38bdf8",
+  "Data Lake": "#2dd4bf",
+  "Data Sharing": "#fb923c",
+  "Applications/SPCS": "#f472b6",
+  "Data Governance": "#34d399",
+};
+
+const EFFORT_DAYS_FALLBACK: Record<string, number> = { small: 15, medium: 30, large: 60 };
+
+function getEstDays(sub: UseCaseBreakdownItem): number {
+  if (sub.sub_estimated_days && sub.sub_estimated_days > 0) return sub.sub_estimated_days;
+  const effort = (sub.sub_estimated_effort ?? "").replace(/^effort:\s*/i, "").toLowerCase().trim();
+  return EFFORT_DAYS_FALLBACK[effort] ?? 30;
+}
+
+function computeGanttBars(items: UseCaseBreakdownItem[]) {
+  const sorted = [...items].sort((a, b) => (a.sub_use_case_index ?? 0) - (b.sub_use_case_index ?? 0));
+  const startDays = new Map<number, number>();
+  const bars: { sub: UseCaseBreakdownItem; startDay: number; days: number; cleanName: string }[] = [];
+
+  for (const item of sorted) {
+    const idx = item.sub_use_case_index ?? 0;
+    const depIdx = item.sub_dependency_index ?? 0;
+    const days = getEstDays(item);
+    let start = 0;
+    if (depIdx > 0) {
+      const depStart = startDays.get(depIdx) ?? 0;
+      const depItem = sorted.find(i => i.sub_use_case_index === depIdx);
+      const depDays = depItem ? getEstDays(depItem) : 0;
+      start = depStart + depDays;
+    }
+    startDays.set(idx, start);
+    const cleanName = (item.sub_use_case_name ?? "").replace(/^\d+\.\s*\*{0,2}/, "").replace(/\*{0,2}$/, "").replace(/^\*{2}SUB-UC\d+:\*{2}\s*/, "").trim();
+    bars.push({ sub: item, startDay: start, days, cleanName });
+  }
+
+  const totalDays = Math.max(...bars.map(b => b.startDay + b.days), 1);
+  return { bars, totalDays };
+}
+
+function GanttTimeline({ items }: { items: UseCaseBreakdownItem[] }) {
+  const { bars, totalDays } = useMemo(() => computeGanttBars(items), [items]);
+
+  const tickInterval = totalDays <= 30 ? 5 : totalDays <= 60 ? 10 : totalDays <= 120 ? 15 : 30;
+  const ticks: number[] = [];
+  for (let d = 0; d <= totalDays; d += tickInterval) ticks.push(d);
+  if (ticks[ticks.length - 1] < totalDays) ticks.push(totalDays);
+
+  return (
+    <div className="space-y-1">
+      <div className="relative h-5 mb-1">
+        {ticks.map((d) => (
+          <span key={d} className="absolute text-[9px] text-slate-400 -translate-x-1/2" style={{ left: `${(d / totalDays) * 100}%` }}>
+            {d}d
+          </span>
+        ))}
+      </div>
+      <div className="relative">
+        {ticks.map((d) => (
+          <div key={d} className="absolute top-0 bottom-0 border-l border-dashed border-slate-200" style={{ left: `${(d / totalDays) * 100}%`, height: `${bars.length * 32 + 4}px` }} />
+        ))}
+        <div className="space-y-1.5 relative">
+          {bars.map((bar) => {
+            const leftPct = (bar.startDay / totalDays) * 100;
+            const widthPct = Math.max((bar.days / totalDays) * 100, 2);
+            const barColor = WORKLOAD_BAR_COLORS[bar.sub.sub_workload ?? ""] ?? "#94a3b8";
+            return (
+              <div key={bar.sub.breakdown_id ?? bar.sub.sub_use_case_index} className="relative h-7 group">
+                <div
+                  className="absolute top-0 h-7 rounded-md flex items-center px-2 overflow-hidden cursor-default transition-opacity hover:opacity-90"
+                  style={{ left: `${leftPct}%`, width: `${widthPct}%`, minWidth: "40px", backgroundColor: barColor }}
+                  title={`${bar.cleanName}\n${bar.days}d | ${bar.sub.sub_workload}\n${bar.sub.sub_rationale ?? ""}`}
+                >
+                  <span className="text-[10px] font-medium text-white truncate">{bar.cleanName}</span>
+                  <span className="ml-auto text-[9px] text-white/80 shrink-0 pl-1">{bar.days}d</span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div className="flex items-center justify-between pt-2 text-[10px] text-slate-400">
+        <span>Estimated total: ~{totalDays} working days</span>
+        <div className="flex gap-2 flex-wrap">
+          {Object.entries(WORKLOAD_BAR_COLORS).filter(([wl]) => bars.some(b => b.sub.sub_workload === wl)).map(([wl, cls]) => (
+            <span key={wl} className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-sm" style={{ backgroundColor: cls }} />
+              <span>{wl}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function BreakdownSection({ breakdowns }: { breakdowns: UseCaseBreakdownItem[] }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [view, setView] = useState<"list" | "timeline">("timeline");
   if (breakdowns.length === 0) return null;
 
   const grouped = breakdowns.reduce((acc, b) => {
@@ -287,6 +387,16 @@ function BreakdownSection({ breakdowns }: { breakdowns: UseCaseBreakdownItem[] }
       </button>
       {isOpen && (
         <div className="px-5 pb-5 pt-1 space-y-4 border-t border-violet-100">
+          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit">
+            <button type="button" onClick={() => setView("list")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${view === "list" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              <List size={12} /> List
+            </button>
+            <button type="button" onClick={() => setView("timeline")}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${view === "timeline" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+              <BarChart3 size={12} /> Timeline
+            </button>
+          </div>
           {parents.map(({ parent, score, overall, items }) => (
             <div key={parent} className="rounded-lg border border-slate-200 bg-white p-4 space-y-3">
               <div className="flex items-start justify-between gap-3">
@@ -300,33 +410,41 @@ function BreakdownSection({ breakdowns }: { breakdowns: UseCaseBreakdownItem[] }
                   {score}/10
                 </span>
               </div>
-              <div className="grid grid-cols-1 gap-2">
-                {items.sort((a, b) => (a.sub_use_case_index ?? 0) - (b.sub_use_case_index ?? 0)).map((sub) => {
-                  const cleanName = (sub.sub_use_case_name ?? "").replace(/^\d+\.\s*\*{0,2}/, "").replace(/\*{0,2}$/, "").replace(/^\*{2}SUB-UC\d+:\*{2}\s*/, "").trim();
-                  const effortNorm = (sub.sub_estimated_effort ?? "").replace(/^Effort:\s*/i, "").toLowerCase().trim();
-                  const effortCls = EFFORT_COLORS[effortNorm] ?? "bg-slate-50 text-slate-600 border-slate-200";
-                  const workloadCls = WORKLOAD_COLORS[sub.sub_workload ?? ""] ?? "bg-slate-50 text-slate-600 border-slate-200";
-                  return (
-                    <div key={sub.breakdown_id ?? sub.sub_use_case_index} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
-                      <div className="flex items-center gap-2 flex-wrap mb-1.5">
-                        <span className="text-xs font-semibold text-slate-700">{cleanName}</span>
-                        <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${workloadCls}`}>
-                          {sub.sub_workload}
-                        </span>
-                        {effortNorm && (
-                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${effortCls}`}>
-                            {effortNorm}
+              {view === "timeline" ? (
+                <GanttTimeline items={items} />
+              ) : (
+                <div className="grid grid-cols-1 gap-2">
+                  {items.sort((a, b) => (a.sub_use_case_index ?? 0) - (b.sub_use_case_index ?? 0)).map((sub) => {
+                    const cleanName = (sub.sub_use_case_name ?? "").replace(/^\d+\.\s*\*{0,2}/, "").replace(/\*{0,2}$/, "").replace(/^\*{2}SUB-UC\d+:\*{2}\s*/, "").trim();
+                    const effortNorm = (sub.sub_estimated_effort ?? "").replace(/^Effort:\s*/i, "").toLowerCase().trim();
+                    const effortCls = EFFORT_COLORS[effortNorm] ?? "bg-slate-50 text-slate-600 border-slate-200";
+                    const workloadCls = WORKLOAD_COLORS[sub.sub_workload ?? ""] ?? "bg-slate-50 text-slate-600 border-slate-200";
+                    const estDays = getEstDays(sub);
+                    return (
+                      <div key={sub.breakdown_id ?? sub.sub_use_case_index} className="rounded-lg border border-slate-100 bg-slate-50/50 p-3">
+                        <div className="flex items-center gap-2 flex-wrap mb-1.5">
+                          <span className="text-xs font-semibold text-slate-700">{cleanName}</span>
+                          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${workloadCls}`}>
+                            {sub.sub_workload}
                           </span>
+                          {effortNorm && (
+                            <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${effortCls}`}>
+                              {effortNorm}
+                            </span>
+                          )}
+                          <span className="inline-flex items-center rounded-full bg-violet-50 text-violet-600 border border-violet-200 px-2 py-0.5 text-[10px] font-medium">
+                            ~{estDays}d
+                          </span>
+                        </div>
+                        {sub.sub_rationale && <p className="text-[11px] text-slate-500 leading-relaxed">{sub.sub_rationale}</p>}
+                        {sub.sub_key_activities && (
+                          <p className="text-[10px] text-slate-400 mt-1">Activities: {sub.sub_key_activities}</p>
                         )}
                       </div>
-                      {sub.sub_rationale && <p className="text-[11px] text-slate-500 leading-relaxed">{sub.sub_rationale}</p>}
-                      {sub.sub_key_activities && (
-                        <p className="text-[10px] text-slate-400 mt-1">Activities: {sub.sub_key_activities}</p>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -440,93 +558,8 @@ function UseCaseCard({ uc, accountStatus }: { uc: UseCase; accountStatus?: strin
   );
 }
 
-function PctChip({ value, label }: { value: number | null; label: string }) {
-  if (value === null) return null;
-  const pos = value >= 0;
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className={`inline-flex items-center gap-0.5 rounded-full px-2 py-0.5 text-[11px] font-semibold ${pos ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-600"}`}>
-        {pos ? "↑" : "↓"}{Math.abs(value).toFixed(1)}%
-      </span>
-      <span className="text-[11px] text-slate-400">{label}</span>
-    </div>
-  );
-}
-
-function CreditUsageSidebar({ rev }: { rev: RevenueSummary | null }) {
-  const hasRevenue = rev && (rev.contract_capacity || rev.total_consumed_revenue);
-  const spent = rev?.total_consumed_revenue ?? 0;
-  const capacity = rev?.contract_capacity ?? 0;
-  const barPct = capacity > 0 ? Math.min((spent / capacity) * 100, 100) : 0;
-  const pct = capacity > 0 ? (spent / capacity) * 100 : null;
-  const barColor = barPct >= 90 ? "bg-red-400" : barPct >= 70 ? "bg-amber-400" : "bg-sky-400";
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">Contract Spend</p>
-      {!hasRevenue ? (
-        <p className="text-xs text-slate-400">No contract data available</p>
-      ) : (
-        <div className="space-y-3">
-          <div>
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-sm font-semibold text-slate-800">
-                {rev!.total_consumed_revenue !== null ? dollarShort(rev!.total_consumed_revenue) : "—"}
-                <span className="text-xs font-normal text-slate-400 ml-1">spent (90d)</span>
-              </span>
-              {pct !== null && (
-                <span className={`text-xs font-semibold ${pct >= 90 ? "text-red-500" : pct >= 70 ? "text-amber-600" : "text-slate-600"}`}>
-                  {pct.toFixed(1)}%
-                </span>
-              )}
-            </div>
-            <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-              <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${barPct}%` }} />
-            </div>
-            {rev!.contract_capacity && (
-              <div className="flex items-center justify-between mt-1">
-                <span className="text-[11px] text-slate-400">
-                  ${(rev!.total_consumed_revenue ?? 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} / ${rev!.contract_capacity.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </span>
-                <span className="text-[11px] text-slate-400">capacity</span>
-              </div>
-            )}
-          </div>
-
-          <div className="space-y-1.5 pt-1 border-t border-slate-100">
-            <PctChip value={rev!.wow_credits_pct_change} label="WoW" />
-            <PctChip value={rev!.mom_credits_pct_change} label="MoM" />
-            {rev!.wow_credits_pct_change === null && rev!.mom_credits_pct_change === null && (
-              <p className="text-[11px] text-slate-400">No trend data yet</p>
-            )}
-          </div>
-
-          {(rev!.predicted_overage_date || rev!.contract_end_date) && (
-            <div className="pt-1 border-t border-slate-100 space-y-0.5">
-              {rev!.predicted_overage_date && (
-                <p className="text-[11px] text-slate-400">
-                  Overage forecast: <span className="text-amber-600 font-medium">{formatDate(rev!.predicted_overage_date)}</span>
-                </p>
-              )}
-              {rev!.contract_end_date && (
-                <p className="text-[11px] text-slate-400">
-                  Contract ends: <span className="text-slate-600 font-medium">{formatDate(rev!.contract_end_date)}</span>
-                </p>
-              )}
-            </div>
-          )}
-
-          {rev!.last_actual_date && (
-            <p className="text-[11px] text-slate-400">Updated {formatDate(rev!.last_actual_date)}</p>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-type TabKey = "overview" | "adoption" | "timeline" | "prep" | "assistant";
-const VALID_TABS: TabKey[] = ["overview", "adoption", "timeline", "prep", "assistant"];
+type TabKey = "overview" | "adoption" | "timeline" | "alerts" | "prep" | "assistant";
+const VALID_TABS: TabKey[] = ["overview", "adoption", "timeline", "alerts", "prep", "assistant"];
 
 export default function AccountDetailPage() {
   const params = useParams<{ id: string }>();
@@ -544,14 +577,7 @@ export default function AccountDetailPage() {
     try { return JSON.parse(decodeURIComponent(raw)) as NBAContext; } catch { return null; }
   }, [searchParams]);
 
-  const [localResources, setLocalResources] = useState<Resource[]>([]);
-  const [showAddResource, setShowAddResource] = useState(false);
-  const [addTitle, setAddTitle] = useState("");
-  const [addType, setAddType] = useState<"note" | "link">("note");
-  const [addContent, setAddContent] = useState("");
-  const [expandedGongCallId, setExpandedGongCallId] = useState<string | null>(null);
   const [editingField, setEditingField] = useState<"status" | "engagement" | null>(null);
-  const [showAllTMRs, setShowAllTMRs] = useState(false);
   const [myPaneOpen, setMyPaneOpen] = useState(true);
   const [otherPaneOpen, setOtherPaneOpen] = useState(false);
   const [showContextInput, setShowContextInput] = useState(false);
@@ -572,12 +598,12 @@ export default function AccountDetailPage() {
   const { data: account, isLoading: accLoading } = useAccount(accountId) as { data: AccountData | undefined; isLoading: boolean };
   const { data: useCases = [] } = useAccountUseCases(accountId) as { data: UseCase[] };
   const { data: gongCallsRaw = [] } = useAccountGongCalls(accountId) as { data: GongCall[] };
-  const { data: allTMRsRaw = [] } = useTMRs() as { data: TMR[] };
   const { data: meetings = [] } = useMeetingActivity(accountId, false) as { data: MeetingActivity[] };
   const { data: emailActivity } = useEmailActivity(accountId) as { data: EmailActivity | undefined };
-  const accountTMRs = useMemo(() => (allTMRsRaw as TMR[]).filter((t) => t.account_id === accountId), [allTMRsRaw, accountId]);
-  const { data: resources = [] } = useAccountResources(accountId) as { data: Resource[] };
   const { data: revenueSummary } = useAccountRevenueSummary(accountId) as { data: RevenueSummary | undefined };
+  const { data: accountAlerts = [], isLoading: alertsLoading } = useAccountAlerts(accountId);
+  const markRead = useMarkAlertRead();
+  const dismissAlert = useDismissAlert();
   const { data: aceDisplayNames = {} } = useAceDisplayNames() as { data: Record<string, string> };
   const { data: trackingStatus } = useAccountTracking(accountId);
   const { data: adoption } = useAccountAdoption(accountId) as { data: AccountAdoptionData | undefined };
@@ -599,31 +625,11 @@ export default function AccountDetailPage() {
   const { data: briefing, isLoading: briefingLoading } = useAccountBriefing(accountId, briefingRefreshKey) as { data: AccountBriefing | undefined; isLoading: boolean };
 
   const gongCalls = useMemo(() => [...gongCallsRaw].sort((a, b) => new Date(b.call_date).getTime() - new Date(a.call_date).getTime()), [gongCallsRaw]);
-  const allResources = useMemo(() => [...localResources, ...resources], [localResources, resources]);
 
   const upcomingMeetingsList = useMemo(() => {
     const now = new Date();
     return meetings.filter((m) => m.is_upcoming || (m.activity_date != null && new Date(m.activity_date + "T00:00:00") > now));
   }, [meetings]);
-
-  const activityItems = useMemo(() => {
-    const now = new Date();
-    const past = meetings.filter((m) => !m.is_upcoming && (m.activity_date == null || new Date(m.activity_date + "T00:00:00") <= now));
-    const matchedGongIds = new Set<string>();
-    const items: Array<{ key: string; date: string; meeting?: MeetingActivity; gong?: GongCall }> = [];
-    for (const m of past) {
-      const dateKey = m.activity_date?.slice(0, 10) ?? "";
-      const matched = gongCalls.find((g) => g.call_date.slice(0, 10) === dateKey) ?? undefined;
-      items.push({ key: m.activity_id, date: m.activity_date ?? "", meeting: m, gong: matched });
-      if (matched) matchedGongIds.add(matched.call_id);
-    }
-    for (const g of gongCalls) {
-      if (!matchedGongIds.has(g.call_id)) {
-        items.push({ key: `gong-${g.call_id}`, date: g.call_date, gong: g });
-      }
-    }
-    return items.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 7);
-  }, [meetings, gongCalls]);
 
   const isMyUseCase = useCallback(
     (uc: UseCase) =>
@@ -652,21 +658,6 @@ export default function AccountDetailPage() {
     }
   }, [useCases, currentUser]);
 
-  function handleAddResource() {
-    if (!addTitle.trim() || !addContent.trim()) return;
-    setLocalResources((prev) => [{
-      resource_id: `local-${Date.now()}`,
-      account_id: accountId,
-      title: addTitle.trim(),
-      resource_type: addType,
-      link_type: addType === "link" ? "external" : null,
-      content: addContent.trim(),
-      created_by: "you",
-      created_at: new Date().toISOString(),
-    }, ...prev]);
-    setAddTitle(""); setAddContent(""); setShowAddResource(false);
-  }
-
   if (accLoading) {
     return (
       <div className="p-8 space-y-4">
@@ -692,6 +683,7 @@ export default function AccountDetailPage() {
     { key: "overview", label: "Overview" },
     { key: "adoption", label: "Account Health" },
     { key: "timeline", label: "Timeline" },
+    { key: "alerts", label: "Alerts" },
     { key: "prep", label: "Meeting Prep" },
     { key: "assistant", label: "ACE" },
   ];
@@ -879,11 +871,44 @@ export default function AccountDetailPage() {
 
 
 
-      <div className="px-6 pb-8 flex gap-6">
-        <div className="flex-1 min-w-0">
+      <div className="px-6 pb-8">
+        <div>
 
           {tab === "overview" && (
             <div className="space-y-4">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                <div className="grid grid-cols-4 gap-4">
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Contract Spend</p>
+                    <p className="text-sm font-bold text-slate-800">
+                      {revenueSummary?.total_consumed_revenue != null ? dollarShort(revenueSummary.total_consumed_revenue) : "—"}
+                    </p>
+                    {revenueSummary?.contract_capacity != null && (
+                      <p className="text-[11px] text-slate-500">of {dollarShort(revenueSummary.contract_capacity)}</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Alerts</p>
+                    <p className="text-sm font-bold text-slate-800">{accountAlerts.length}</p>
+                    <p className="text-[11px] text-slate-500">active alerts</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Meetings</p>
+                    <p className="text-sm font-bold text-slate-800">{account.meetings_last_30d}</p>
+                    <p className="text-[11px] text-slate-500">last 30d · {account.upcoming_meetings_5d ?? 0} upcoming</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1">Emails</p>
+                    <p className="text-sm font-bold text-slate-800">{emailActivity?.emails_last_30d ?? 0}</p>
+                    {emailActivity?.email_trend && (
+                      <p className={`text-[11px] font-medium ${emailActivity.email_trend === "increasing" ? "text-emerald-600" : emailActivity.email_trend === "declining" ? "text-rose-600" : "text-slate-500"}`}>
+                        {emailActivity.email_trend}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {!briefingLoading && briefing && !briefing.error && briefing.situation_summary && (
                 <div className="rounded-xl border border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-sm p-4">
                   <div className="flex items-start justify-between gap-3 mb-3">
@@ -987,31 +1012,258 @@ export default function AccountDetailPage() {
           )}
 
           {tab === "timeline" && (
-            <div className="space-y-4">
-              {account.no_recording && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
-                  <VideoOff size={14} className="text-amber-600 mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-semibold text-amber-800">Meetings not recorded for this account</p>
-                    <p className="text-[11px] text-amber-700 mt-0.5">Add context manually so it appears on the timeline.</p>
+            <div className="flex gap-6">
+              <div className="flex-1 min-w-0 space-y-4">
+                {account.no_recording && (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
+                    <VideoOff size={14} className="text-amber-600 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-amber-800">Meetings not recorded for this account</p>
+                      <p className="text-[11px] text-amber-700 mt-0.5">Add context manually so it appears on the timeline.</p>
+                    </div>
                   </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Activity Timeline</p>
+                  <button
+                    type="button"
+                    onClick={() => { setAddCtxClassification("meeting_notes"); setAddCtxTitle(""); setAddCtxDate(new Date().toISOString().slice(0, 10)); setAddCtxContent(""); setShowAddContext(true); }}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-600 hover:text-sky-700 border border-sky-200 rounded-full px-2.5 py-0.5 hover:bg-sky-50 transition-colors"
+                  >
+                    <Plus size={11} /> Add Context
+                  </button>
                 </div>
-              )}
-              <div className="flex items-center justify-between">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Activity Timeline</p>
-                <button
-                  type="button"
-                  onClick={() => { setAddCtxClassification("meeting_notes"); setAddCtxTitle(""); setAddCtxDate(new Date().toISOString().slice(0, 10)); setAddCtxContent(""); setShowAddContext(true); }}
-                  className="inline-flex items-center gap-1 text-[11px] font-medium text-sky-600 hover:text-sky-700 border border-sky-200 rounded-full px-2.5 py-0.5 hover:bg-sky-50 transition-colors"
-                >
-                  <Plus size={11} /> Add Context
-                </button>
+                <NotesTimeline accountId={accountId} gongCalls={gongCalls} onDelete={(entryId) => {
+                  if (confirm("Delete this entry from the timeline?")) {
+                    deleteTimelineContext.mutate(entryId);
+                  }
+                }} />
               </div>
-              <NotesTimeline accountId={accountId} gongCalls={gongCalls} onDelete={(entryId) => {
-                if (confirm("Delete this entry from the timeline?")) {
-                  deleteTimelineContext.mutate(entryId);
-                }
-              }} />
+
+              <div className="w-64 shrink-0">
+                <div className="sticky top-6 space-y-4">
+                  <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <CalendarCheck2 size={12} className="text-emerald-500" />Meetings
+                    </p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Last 30d</span>
+                        <span className="text-xs font-semibold text-slate-800">{account.meetings_last_30d}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Upcoming</span>
+                        <span className="text-xs font-semibold text-emerald-600">{upcomingMeetingsList.length}</span>
+                      </div>
+                      {meetings.length > 0 && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Last meeting</span>
+                          <span className="text-xs text-slate-600">{formatDate(meetings[0]?.activity_date)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                      <Mail size={12} className="text-sky-400" />Emails
+                    </p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Last 30d</span>
+                        <span className="text-xs font-semibold text-slate-800">{emailActivity?.emails_last_30d ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Outbound</span>
+                        <span className="text-xs text-slate-700">{emailActivity?.emails_outbound_30d ?? 0}</span>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs text-slate-500">Inbound</span>
+                        <span className="text-xs text-slate-700">{emailActivity?.emails_inbound_30d ?? 0}</span>
+                      </div>
+                      {emailActivity?.email_trend && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Trend</span>
+                          <span className={`text-xs font-medium flex items-center gap-1 ${
+                            emailActivity.email_trend === "increasing" ? "text-emerald-600" :
+                            emailActivity.email_trend === "declining" ? "text-rose-600" : "text-slate-500"
+                          }`}>
+                            {emailActivity.email_trend === "increasing" && <TrendingUp size={11} />}
+                            {emailActivity.email_trend === "declining" && <TrendingDown size={11} />}
+                            {emailActivity.email_trend}
+                          </span>
+                        </div>
+                      )}
+                      {emailActivity?.last_email_date && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Last email</span>
+                          <span className="text-xs text-slate-600">{formatDate(emailActivity.last_email_date)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {useCases.length > 0 && (
+                    <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3">PS Notes</p>
+                      <div className="space-y-2">
+                        {(useCases as UseCase[]).map((uc) => {
+                          const lastDate = uc.last_note_date ?? uc.ps_notes?.[0]?.created_at ?? null;
+                          const daysSince = lastDate ? Math.floor((Date.now() - new Date(lastDate).getTime()) / 86400000) : null;
+                          const dotColor = daysSince === null ? "bg-red-400" : daysSince > 60 ? "bg-red-400" : daysSince > 30 ? "bg-amber-400" : "bg-emerald-400";
+                          return (
+                            <div key={uc.use_case_id} className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 min-w-0">
+                                <span className={`h-2 w-2 rounded-full shrink-0 ${dotColor}`} />
+                                <span className={`text-xs truncate ${isMyUseCase(uc) ? "font-semibold text-slate-800" : "text-slate-600"}`}>{uc.use_case_name}</span>
+                              </div>
+                              <span className="text-[11px] text-slate-400 shrink-0">
+                                {lastDate ? new Date(lastDate).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {tab === "alerts" && (
+            <div className="space-y-6">
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-amber-500" />
+                    Alerts
+                    {accountAlerts.length > 0 && (
+                      <span className="inline-flex items-center justify-center h-5 min-w-[20px] rounded-full bg-red-500 text-[10px] font-bold text-white px-1.5">
+                        {accountAlerts.length}
+                      </span>
+                    )}
+                  </p>
+                </div>
+                {alertsLoading ? (
+                  <p className="text-sm text-slate-400">Loading…</p>
+                ) : accountAlerts.length === 0 ? (
+                  <p className="text-sm text-slate-400">No active alerts for this account.</p>
+                ) : (
+                  <div className="space-y-0 divide-y divide-slate-100">
+                    {(accountAlerts as AlertItem[]).map((alert) => (
+                      <div key={alert.alert_id} className="py-3 first:pt-0 group flex items-start gap-3">
+                        <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${alert.priority === "high" ? "bg-red-500" : alert.priority === "medium" ? "bg-amber-500" : "bg-slate-300"}`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-0.5">
+                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              {alert.signal_type.replace(/_/g, " ")}
+                            </span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${alert.priority === "high" ? "bg-red-50 text-red-600 border border-red-100" : alert.priority === "medium" ? "bg-amber-50 text-amber-600 border border-amber-100" : "bg-slate-50 text-slate-500 border border-slate-100"}`}>
+                              {alert.priority}
+                            </span>
+                          </div>
+                          <p className="text-xs text-slate-600">{alert.text ?? "—"}</p>
+                          {alert.created_at && (
+                            <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(alert.created_at)}</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => dismissAlert.mutate(alert.alert_id)}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-slate-400 hover:text-slate-600 shrink-0 px-2 py-1 rounded hover:bg-slate-100"
+                          title="Dismiss"
+                        >Dismiss</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <p className="text-sm font-semibold text-slate-700">Context Notes</p>
+                  <button type="button" onClick={() => setShowContextInput((v) => !v)}
+                    className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
+                    <Plus size={11} /> {showContextInput ? "Close" : "Add Context"}
+                  </button>
+                </div>
+
+                {showContextInput && (
+                  <div className="mb-4 space-y-2 p-4 rounded-lg bg-slate-50 border border-slate-200">
+                    <select value={contextType} onChange={(e) => setContextType(e.target.value)}
+                      className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400">
+                      <option value="note">Observation</option>
+                      <option value="email">Email</option>
+                      <option value="meeting_note">Meeting Note</option>
+                      <option value="slack">Slack</option>
+                    </select>
+                    <textarea
+                      placeholder="Paste an email, meeting notes, or quick observation here…"
+                      value={contextText}
+                      onChange={(e) => setContextText(e.target.value)}
+                      rows={5}
+                      className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                    />
+                    {contextResult && (
+                      <div className="rounded-lg bg-sky-50 border border-sky-100 p-2.5 space-y-1">
+                        {contextResult.sentiment && (
+                          <p className="text-[11px] text-slate-600">
+                            <span className="font-medium">Sentiment:</span>{" "}
+                            <span className={contextResult.sentiment === "frustration" || contextResult.sentiment === "urgent" ? "text-red-600 font-medium" : contextResult.sentiment === "positive" ? "text-green-600" : "text-slate-600"}>
+                              {contextResult.sentiment}
+                            </span>
+                          </p>
+                        )}
+                        {contextResult.summary && (
+                          <p className="text-[11px] text-slate-600"><span className="font-medium">Summary:</span> {contextResult.summary}</p>
+                        )}
+                      </div>
+                    )}
+                    <div className="flex items-center justify-end gap-2">
+                      <button type="button" onClick={() => { setShowContextInput(false); setContextText(""); setContextResult(null); }}
+                        className="rounded px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
+                      <button type="button"
+                        disabled={!contextText.trim() || contextSubmitting}
+                        onClick={async () => {
+                          if (!contextText.trim()) return;
+                          setContextSubmitting(true);
+                          setContextResult(null);
+                          try {
+                            const res = await addContext.mutateAsync({ content: contextText, context_type: contextType, source: "manual" });
+                            setContextResult({ summary: res.summary ?? null, sentiment: res.sentiment ?? null });
+                            setContextText("");
+                          } finally {
+                            setContextSubmitting(false);
+                          }
+                        }}
+                        className="rounded bg-sky-500 px-2.5 py-1 text-xs text-white hover:bg-sky-600 disabled:opacity-40">
+                        {contextSubmitting ? "Analyzing…" : "Submit"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {contextNotes.length > 0 ? (
+                  <div className="space-y-2 divide-y divide-slate-50">
+                    {(contextNotes as ContextNote[]).map((note, i) => (
+                      <div key={note.context_id ?? i} className="pt-2 first:pt-0">
+                        <div className="flex items-center gap-1.5 mb-0.5">
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                            note.sentiment === "frustration" || note.sentiment === "urgent" ? "bg-red-50 text-red-600" :
+                            note.sentiment === "positive" ? "bg-green-50 text-green-600" :
+                            "bg-slate-100 text-slate-500"
+                          }`}>{note.sentiment ?? note.context_type ?? "note"}</span>
+                          <span className="text-[10px] text-slate-400">{note.created_at ? new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</span>
+                        </div>
+                        <p className="text-xs text-slate-600">{note.parsed_summary ?? note.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  !showContextInput && <p className="text-xs text-slate-400">No context added yet.</p>
+                )}
+              </div>
             </div>
           )}
 
@@ -1106,333 +1358,6 @@ export default function AccountDetailPage() {
             </div>
             </>
           )}
-        </div>
-
-        <div className="w-72 shrink-0">
-          <div className="sticky top-6 space-y-4">
-            <CreditUsageSidebar rev={revenueSummary ?? null} />
-
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <CalendarCheck2 size={12} className="text-emerald-500" />Meeting Activity
-              </p>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500">Meetings (30d)</span>
-                  <span className="text-xs font-semibold text-slate-800">{account.meetings_last_30d}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-slate-500">Upcoming (14d)</span>
-                  <span className="text-xs font-semibold text-emerald-600">{upcomingMeetingsList.length}</span>
-                </div>
-              </div>
-              {upcomingMeetingsList.length > 0 && (
-                <div className="mt-3 pt-2 border-t border-slate-100 space-y-1.5">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase">Upcoming</p>
-                  {upcomingMeetingsList.slice(0, 3).map((m) => (
-                    <div key={m.activity_id} className="text-[11px]">
-                      <p className="text-slate-700 font-medium line-clamp-1">{m.subject ?? "Meeting"}</p>
-                      <p className="text-slate-400">{m.activity_date ? new Date(m.activity_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {activityItems.length > 0 && (
-                <div className="mt-3 pt-2 border-t border-slate-100 space-y-0 divide-y divide-slate-50">
-                  <p className="text-[10px] font-semibold text-slate-400 uppercase mb-1.5">Recent Activity</p>
-                  {activityItems.map((item) => {
-                    const isExpanded = expandedGongCallId === item.key;
-                    const tw = parseTakeaways(item.meeting?.takeaways);
-                    const gong = item.gong;
-                    return (
-                      <div key={item.key} className="py-2 first:pt-0">
-                        <button
-                          type="button"
-                          onClick={() => setExpandedGongCallId(isExpanded ? null : item.key)}
-                          className="w-full text-left"
-                        >
-                          <div className="flex items-start justify-between gap-1 mb-0.5">
-                            <p className="text-[11px] font-medium text-slate-700 line-clamp-1 flex-1">
-                              {item.meeting?.subject ?? gong?.title ?? "Meeting"}
-                            </p>
-                            <span className="text-[10px] text-slate-400 shrink-0">
-                              {formatDate(item.date)}
-                            </span>
-                          </div>
-                          {!isExpanded && (tw.recap || (gong && !item.meeting && gong.summary)) && (
-                            <p className="text-[11px] text-slate-500 line-clamp-2">
-                              {tw.recap ?? gong?.summary}
-                            </p>
-                          )}
-                        </button>
-                        {isExpanded && (
-                          <div className="mt-1.5 space-y-1.5">
-                            {(tw.recap || (gong && !item.meeting && gong.summary)) && (
-                              <p className="text-[11px] text-slate-600 leading-relaxed">
-                                {tw.recap ?? gong?.summary}
-                              </p>
-                            )}
-                            {tw.next_steps && tw.next_steps.length > 0 && (
-                              <div>
-                                <p className="text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Next Steps</p>
-                                <ul className="space-y-0.5">
-                                  {tw.next_steps.slice(0, 3).map((s, i) => (
-                                    <li key={i} className="text-[11px] text-slate-600 flex gap-1 items-start">
-                                      <span className="text-slate-400 shrink-0 mt-0.5">•</span>
-                                      <span className="line-clamp-2">{s.replace(/^- /, "")}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                            {!item.meeting && gong && gong.next_steps.length > 0 && (
-                              <div>
-                                <p className="text-[10px] font-semibold text-slate-400 uppercase mb-0.5">Next Steps</p>
-                                <ul className="space-y-0.5">
-                                  {gong.next_steps.slice(0, 3).map((s, i) => (
-                                    <li key={i} className="text-[11px] text-slate-600 flex gap-1 items-start">
-                                      <span className="text-slate-400 shrink-0 mt-0.5">•</span>
-                                      <span className="line-clamp-2">{s}</span>
-                                    </li>
-                                  ))}
-                                </ul>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        {gong && extractUrl(gong.recording_url) && (
-                          <a
-                            href={extractUrl(gong.recording_url)!}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="inline-flex items-center gap-1 mt-1 text-[11px] text-sky-600 hover:underline"
-                          >
-                            <PhoneCall size={10} />View recording
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {emailActivity && (
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                  <Mail size={12} className="text-sky-400" />Email Activity
-                </p>
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Emails (30d)</span>
-                    <span className="text-xs font-semibold text-slate-800">{emailActivity.emails_last_30d}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Outbound</span>
-                    <span className="text-xs font-medium text-slate-700">{emailActivity.emails_outbound_30d}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs text-slate-500">Inbound</span>
-                    <span className="text-xs font-medium text-slate-700">{emailActivity.emails_inbound_30d}</span>
-                  </div>
-                  {emailActivity.email_trend && (
-                    <div className="flex items-center justify-between pt-1 border-t border-slate-100">
-                      <span className="text-xs text-slate-500">Trend</span>
-                      <span className={`text-xs font-semibold flex items-center gap-1 ${
-                        emailActivity.email_trend === "increasing" ? "text-emerald-600" :
-                        emailActivity.email_trend === "declining" ? "text-rose-600" : "text-slate-500"
-                      }`}>
-                        {emailActivity.email_trend === "increasing" && <TrendingUp size={11} />}
-                        {emailActivity.email_trend === "declining" && <TrendingDown size={11} />}
-                        {emailActivity.email_trend}
-                      </span>
-                    </div>
-                  )}
-                  {emailActivity.last_email_date && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-slate-500">Last email</span>
-                      <span className="text-xs text-slate-600">{formatDate(emailActivity.last_email_date)}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Add Context</p>
-                <button type="button" onClick={() => setShowContextInput((v) => !v)}
-                  className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
-                  <Plus size={11} /> {showContextInput ? "Close" : "Add"}
-                </button>
-              </div>
-
-              {showContextInput && (
-                <div className="space-y-2">
-                  <select value={contextType} onChange={(e) => setContextType(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400">
-                    <option value="note">Observation</option>
-                    <option value="email">Email</option>
-                    <option value="meeting_note">Meeting Note</option>
-                    <option value="slack">Slack</option>
-                  </select>
-                  <textarea
-                    placeholder="Paste an email, meeting notes, or quick observation here… The AI will extract people, topics, risks, and action items automatically."
-                    value={contextText}
-                    onChange={(e) => setContextText(e.target.value)}
-                    rows={5}
-                    className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                  />
-                  {contextResult && (
-                    <div className="rounded-lg bg-sky-50 border border-sky-100 p-2.5 space-y-1">
-                      {contextResult.sentiment && (
-                        <p className="text-[11px] text-slate-600">
-                          <span className="font-medium">Sentiment:</span>{" "}
-                          <span className={contextResult.sentiment === "frustration" || contextResult.sentiment === "urgent" ? "text-red-600 font-medium" : contextResult.sentiment === "positive" ? "text-green-600" : "text-slate-600"}>
-                            {contextResult.sentiment}
-                          </span>
-                        </p>
-                      )}
-                      {contextResult.summary && (
-                        <p className="text-[11px] text-slate-600"><span className="font-medium">Summary:</span> {contextResult.summary}</p>
-                      )}
-                    </div>
-                  )}
-                  <div className="flex items-center justify-end gap-2">
-                    <button type="button" onClick={() => { setShowContextInput(false); setContextText(""); setContextResult(null); }}
-                      className="rounded px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
-                    <button type="button"
-                      disabled={!contextText.trim() || contextSubmitting}
-                      onClick={async () => {
-                        if (!contextText.trim()) return;
-                        setContextSubmitting(true);
-                        setContextResult(null);
-                        try {
-                          const res = await addContext.mutateAsync({ content: contextText, context_type: contextType, source: "manual" });
-                          setContextResult({ summary: res.summary ?? null, sentiment: res.sentiment ?? null });
-                          setContextText("");
-                        } finally {
-                          setContextSubmitting(false);
-                        }
-                      }}
-                      className="rounded bg-sky-500 px-2.5 py-1 text-xs text-white hover:bg-sky-600 disabled:opacity-40">
-                      {contextSubmitting ? "Analyzing…" : "Submit"}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {contextNotes.length > 0 && (
-                <div className="mt-3 space-y-2 divide-y divide-slate-50">
-                  {(contextNotes as ContextNote[]).slice(0, 5).map((note, i) => (
-                    <div key={note.context_id ?? i} className="pt-2 first:pt-0">
-                      <div className="flex items-center gap-1.5 mb-0.5">
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                          note.sentiment === "frustration" || note.sentiment === "urgent" ? "bg-red-50 text-red-600" :
-                          note.sentiment === "positive" ? "bg-green-50 text-green-600" :
-                          "bg-slate-100 text-slate-500"
-                        }`}>{note.sentiment ?? note.context_type ?? "note"}</span>
-                        <span className="text-[10px] text-slate-400">{note.created_at ? new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-600 line-clamp-2">{note.parsed_summary ?? note.content}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {contextNotes.length === 0 && !showContextInput && (
-                <p className="text-xs text-slate-400">No context added yet.</p>
-              )}
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Resources & Notes</p>
-                <button type="button" onClick={() => setShowAddResource((v) => !v)}
-                  className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
-                  <Plus size={11} /> Add info
-                </button>
-              </div>
-
-              {showAddResource && (
-                <div className="mb-3 space-y-2 p-3 rounded-lg bg-slate-50 border border-slate-200">
-                  <div className="flex items-center gap-3">
-                    {(["note", "link"] as const).map((t) => (
-                      <label key={t} className="flex items-center gap-1.5 text-xs text-slate-600 cursor-pointer">
-                        <input type="radio" value={t} checked={addType === t} onChange={() => setAddType(t)} />
-                        {t.charAt(0).toUpperCase() + t.slice(1)}
-                      </label>
-                    ))}
-                  </div>
-                  <input type="text" placeholder="Title" value={addTitle} onChange={(e) => setAddTitle(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
-                  {addType === "note" ? (
-                    <textarea placeholder="Note content…" value={addContent} onChange={(e) => setAddContent(e.target.value)} rows={3}
-                      className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
-                  ) : (
-                    <input type="url" placeholder="https://…" value={addContent} onChange={(e) => setAddContent(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400" />
-                  )}
-                  <div className="flex items-center justify-end gap-2">
-                    <button type="button" onClick={() => { setShowAddResource(false); setAddTitle(""); setAddContent(""); }}
-                      className="rounded px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
-                    <button type="button" onClick={handleAddResource}
-                      disabled={!addTitle.trim() || !addContent.trim()}
-                      className="rounded bg-sky-500 px-2.5 py-1 text-xs text-white hover:bg-sky-600 disabled:opacity-40">Save</button>
-                  </div>
-                </div>
-              )}
-
-              {allResources.length === 0 ? (
-                <p className="text-xs text-slate-400">No resources added yet.</p>
-              ) : (
-                <div className="space-y-0 divide-y divide-slate-50">
-                  {(allResources as Resource[]).map((r) => (
-                    <div key={r.resource_id} className="flex gap-2.5 py-2.5 first:pt-0">
-                      <FileText size={13} className="shrink-0 mt-0.5 text-slate-400" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-slate-800 truncate">{r.title}</p>
-                        {r.resource_type === "note" ? (
-                          <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{r.content}</p>
-                        ) : (
-                          <a href={r.content} target="_blank" rel="noopener noreferrer"
-                            className="text-[11px] text-sky-600 hover:underline truncate block mt-0.5">{r.content}</a>
-                        )}
-                        <p className="text-[11px] text-slate-400 mt-0.5">{r.created_by} · {formatDate(r.created_at)}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-
-
-            {accountTMRs.length > 0 && (
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-                <div className="flex items-center justify-between mb-3">
-                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">TMRs ({accountTMRs.length})</p>
-                  {accountTMRs.length > 2 && (
-                    <button onClick={() => setShowAllTMRs((v) => !v)} className="text-[11px] text-sky-600 hover:underline">{showAllTMRs ? "Show less" : "Show all"}</button>
-                  )}
-                </div>
-                <div className="space-y-2 divide-y divide-slate-50">
-                  {(showAllTMRs ? accountTMRs : accountTMRs.slice(0, 2)).map((tmr) => (
-                    <div key={tmr.tmr_id} className="py-2 first:pt-0">
-                      <div className="flex items-start justify-between gap-2 mb-0.5">
-                        <p className="text-xs font-medium text-slate-800 line-clamp-1 flex-1">{tmr.activity_requested ?? tmr.engagement_type ?? "TMR"}</p>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full shrink-0 ${tmr.status === "Closed" ? "bg-slate-100 text-slate-400" : "bg-amber-50 text-amber-700"}`}>{tmr.status}</span>
-                      </div>
-                      <p className="text-[11px] text-slate-500">{tmr.requestor} {tmr.requested_date ? `· ${formatDate(tmr.requested_date)}` : ""}</p>
-                      {tmr.specialist_comments && (
-                        <p className="text-[11px] text-slate-500 line-clamp-2 mt-0.5">{tmr.specialist_comments}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
       </div>
     </div>

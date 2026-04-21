@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useApi";
 
 type Tab = "ace" | "alerts";
-type AlertSubTab = "use_cases";
+type AlertSubTab = "use_cases" | "engagement" | "consumption" | "support" | "intelligence";
 
 const PRIORITY_OPTIONS = ["high", "medium", "low"] as const;
 
@@ -279,8 +279,79 @@ function AlertToggleCard({ item }: { item: AlertPreferenceItem }) {
   );
 }
 
+const INTELLIGENCE_CATALOG = [
+  {
+    signal_type: "customer_frustration",
+    label: "Customer Frustration",
+    description:
+      "Detected when a context note you've added carries a frustrated or urgent sentiment. Always active.",
+    how_generated:
+      "Parsed in real-time from BKMNG_USER_CONTEXT_V2. Fires when SENTIMENT is 'frustration' or 'urgent'. Cannot be disabled.",
+  },
+  {
+    signal_type: "user_reported_risk",
+    label: "SE-Reported Risk",
+    description:
+      "Fires when a context note contains high-severity risks in the parsed risk array. Always active.",
+    how_generated:
+      "Parsed from RISKS_IDENTIFIED in BKMNG_USER_CONTEXT_V2. Only high-severity risk entries trigger this signal. Cannot be disabled.",
+  },
+  {
+    signal_type: "user_reported_blocker",
+    label: "SE-Reported Blocker",
+    description:
+      "Fires when a context note you've added identifies a blocker. Always active.",
+    how_generated:
+      "Parsed from BLOCKERS_MENTIONED in BKMNG_USER_CONTEXT_V2. Any non-empty blockers array triggers this signal. Cannot be disabled.",
+  },
+];
+
+const SUB_TABS: { id: AlertSubTab; label: string; category: string | null }[] = [
+  { id: "use_cases",    label: "Use Cases",    category: "use_case" },
+  { id: "engagement",   label: "Engagement",   category: "engagement" },
+  { id: "consumption",  label: "Consumption",  category: "consumption" },
+  { id: "support",      label: "Support",      category: "support" },
+  { id: "intelligence", label: "Intelligence", category: null },
+];
+
+function IntelligenceCard({
+  label,
+  description,
+  howGenerated,
+}: {
+  label: string;
+  description: string;
+  howGenerated: string;
+}) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <h3 className="text-sm font-semibold text-slate-800">{label}</h3>
+          <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset whitespace-nowrap bg-red-50 text-red-600 ring-red-200">
+            high
+          </span>
+        </div>
+        <span className="shrink-0 text-[10px] font-medium text-slate-400 bg-slate-100 rounded-full px-2.5 py-1 whitespace-nowrap">
+          Always on
+        </span>
+      </div>
+      <p className="text-xs text-slate-600 mt-3 leading-relaxed">{description}</p>
+      <details className="group mt-4">
+        <summary className="flex items-center gap-1 text-[11px] font-medium text-slate-400 cursor-pointer hover:text-slate-600 transition-colors">
+          <ChevronRight size={12} className="transition-transform group-open:rotate-90" />
+          How is this generated?
+        </summary>
+        <p className="mt-2 text-xs text-slate-500 pl-4 border-l-2 border-slate-100">
+          {howGenerated}
+        </p>
+      </details>
+    </div>
+  );
+}
+
 function AlertsTab() {
-  const [subTab] = useState<AlertSubTab>("use_cases");
+  const [subTab, setSubTab] = useState<AlertSubTab>("use_cases");
   const { data: alertPrefs, isLoading } = useAlertPreferences();
 
   if (isLoading) {
@@ -291,44 +362,79 @@ function AlertsTab() {
     );
   }
 
-  const useCaseAlerts = (alertPrefs || []).filter((a) => a.category === "use_case");
-  const enabledCount = useCaseAlerts.filter((a) => a.enabled).length;
-  const customCount = useCaseAlerts.filter((a) => a.priority !== a.default_priority).length;
+  const currentTab = SUB_TABS.find((t) => t.id === subTab)!;
+  const items =
+    currentTab.category !== null
+      ? (alertPrefs || []).filter((a) => a.category === currentTab.category)
+      : [];
+  const enabledCount = items.filter((a) => a.enabled).length;
+  const customCount = items.filter((a) => a.priority !== a.default_priority).length;
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-1 border-b border-slate-200">
-        <button
-          className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 ${
-            subTab === "use_cases"
-              ? "border-sky-500 text-sky-600"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          Use Cases
-        </button>
+      <div className="flex items-center gap-1 border-b border-slate-200 overflow-x-auto">
+        {SUB_TABS.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setSubTab(tab.id)}
+            className={`px-3 py-2 text-xs font-medium transition-colors border-b-2 whitespace-nowrap ${
+              subTab === tab.id
+                ? "border-sky-500 text-sky-600"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {subTab === "use_cases" && (
-        <div className="space-y-4">
-          <div>
-            <h2 className="text-sm font-semibold text-slate-800">Use Case Alerts</h2>
-            <p className="text-xs text-slate-500 mt-1">
-              {enabledCount} of {useCaseAlerts.length} enabled
-              {customCount > 0 && ` \u00b7 ${customCount} with custom priority`}
-            </p>
-          </div>
-          {useCaseAlerts.length === 0 ? (
-            <p className="text-xs text-slate-400 italic">No use case alerts configured yet.</p>
-          ) : (
+      <div className="space-y-4">
+        {subTab === "intelligence" ? (
+          <>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">Intelligence Signals</h2>
+              <p className="text-xs text-slate-500 mt-1">
+                These signals are derived from your context notes and are always active. They cannot
+                be disabled or have their priority changed.
+              </p>
+            </div>
             <div className="space-y-3">
-              {useCaseAlerts.map((item) => (
-                <AlertToggleCard key={item.signal_type} item={item} />
+              {INTELLIGENCE_CATALOG.map((item) => (
+                <IntelligenceCard
+                  key={item.signal_type}
+                  label={item.label}
+                  description={item.description}
+                  howGenerated={item.how_generated}
+                />
               ))}
             </div>
-          )}
-        </div>
-      )}
+          </>
+        ) : (
+          <>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-800">
+                {currentTab.label} Alerts
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                {items.length === 0
+                  ? "No alerts in this category."
+                  : `${enabledCount} of ${items.length} enabled${
+                      customCount > 0 ? ` \u00b7 ${customCount} with custom priority` : ""
+                    }`}
+              </p>
+            </div>
+            {items.length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No alerts configured in this category.</p>
+            ) : (
+              <div className="space-y-3">
+                {items.map((item) => (
+                  <AlertToggleCard key={item.signal_type} item={item} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
     </div>
   );
 }

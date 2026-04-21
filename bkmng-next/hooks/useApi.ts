@@ -272,7 +272,7 @@ export function useDeleteAccountTracking(accountId: string) {
 
 export function useUpdateAccountFields(accountId: string) {
   const qc = useQueryClient();
-  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean }, { previous: unknown } | undefined>({
+  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean }, { previousDetail: unknown; previousList: unknown } | undefined>({
     mutationFn: (body) =>
       apiFetch(`/api/accounts/${accountId}`, {
         method: "PATCH",
@@ -280,18 +280,25 @@ export function useUpdateAccountFields(accountId: string) {
         body: JSON.stringify(body),
       }),
     onMutate: async (body) => {
+      await qc.cancelQueries({ queryKey: ["accounts"] });
       await qc.cancelQueries({ queryKey: ["account", accountId] });
-      const previous = qc.getQueryData(["account", accountId]);
+      const previousDetail = qc.getQueryData(["account", accountId]);
+      const previousList = qc.getQueryData(["accounts"]);
       qc.setQueryData(["account", accountId], (old: Record<string, unknown> | undefined) =>
         old ? { ...old, ...body } : old
       );
-      return { previous };
+      qc.setQueryData(["accounts"], (old: Record<string, unknown>[] | undefined) =>
+        old?.map((a) => a.account_id === accountId ? { ...a, ...body } : a)
+      );
+      return { previousDetail, previousList };
     },
     onError: (_err, _body, ctx) => {
-      if (ctx?.previous !== undefined) qc.setQueryData(["account", accountId], ctx.previous);
+      if (ctx?.previousDetail !== undefined) qc.setQueryData(["account", accountId], ctx.previousDetail);
+      if (ctx?.previousList !== undefined) qc.setQueryData(["accounts"], ctx.previousList);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["account", accountId] });
+      qc.invalidateQueries({ queryKey: ["accounts"] });
     },
   });
 }
@@ -308,6 +315,33 @@ export function useSignalCounts() {
     queryFn: () => apiFetch<Record<string, SignalCountEntry>>("/api/accounts/signal-counts"),
     staleTime: 60_000,
     retry: 1,
+  });
+}
+
+export type AccountSignal = {
+  signal_id: string;
+  signal_type: string;
+  priority: "high" | "medium" | "low";
+  text: string;
+  category: string | null;
+  created_at: string | null;
+};
+
+export function useAccountSignals(accountId: string) {
+  return useQuery<AccountSignal[]>({
+    queryKey: ["account-signals", accountId],
+    queryFn: () => apiFetch<AccountSignal[]>(`/api/accounts/${accountId}/signals`),
+    enabled: !!accountId,
+    staleTime: 60_000,
+  });
+}
+
+export function useAccountAlerts(accountId: string) {
+  return useQuery<AlertItem[]>({
+    queryKey: ["account-alerts", accountId],
+    queryFn: () => apiFetch<AlertItem[]>(`/api/alerts?account_id=${accountId}`),
+    enabled: !!accountId,
+    staleTime: 30_000,
   });
 }
 
@@ -381,6 +415,8 @@ export type UseCaseBreakdownItem = {
   sub_rationale?: string;
   sub_estimated_effort?: string;
   sub_key_activities?: string;
+  sub_estimated_days?: number;
+  sub_dependency_index?: number;
   total_sub_use_cases?: number;
   overall_rationale?: string;
   criteria_scores?: string;
@@ -1049,7 +1085,7 @@ export type SecurityMilestone = {
   priority: "critical" | "high" | "medium" | "informational";
   industry_required: boolean;
   industry_priority: string;
-  raw_value: Record<string, number> | null;
+  raw_value: Record<string, string | number | null> | null;
   llm_summary: string | null;
   ace_override: {
     status: string;

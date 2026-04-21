@@ -110,11 +110,11 @@ function SignalIcon({ type, size = 13 }: { type: string; size?: number }) {
   if (type === "no_interaction_14d" || type === "no_interaction_7d" || type === "champion_silent")
     return <PhoneMissed size={size} className={`${base} text-slate-400`} />;
   if (type === "capacity_warning")
-    return <AlertTriangle size={size} className={`${base} text-amber-500`} />;
+    return <AlertTriangle size={size} className={`${base} text-emerald-600`} />;
   if (type === "consumption_spike")
-    return <TrendingUp size={size} className={`${base} text-orange-500`} />;
+    return <TrendingUp size={size} className={`${base} text-emerald-500`} />;
   if (type === "consumption_dip")
-    return <TrendingDown size={size} className={`${base} text-rose-500`} />;
+    return <TrendingDown size={size} className={`${base} text-amber-500`} />;
   if (type === "contract_ending")
     return <CalendarClock size={size} className={`${base} text-amber-600`} />;
   if (type === "go_live_approaching")
