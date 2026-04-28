@@ -3,7 +3,7 @@
 SPCS_REGISTRY := sfsenorthamerica-jdavis-aws1.registry.snowflakecomputing.com
 SPCS_IMAGE    := $(SPCS_REGISTRY)/bookmanager/demo/bkmng_repo/bkmng:latest
 SPCS_SPEC     := bkmng-spec-demo.yaml
-SNOW_CONN     := JDAVIS_AWS1
+SNOW_CONN     := sfsenorthamerica-jdavis_aws1
 
 # First-time setup
 setup:
