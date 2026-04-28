@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel
 
@@ -13,3 +13,5 @@ class NBAItem(BaseModel):
     priority: Literal["high", "medium", "low"]
     text: str
     summary: str
+    lane: str = "client"
+    category: Optional[str] = None

@@ -5,7 +5,7 @@ cd /app/backend
 uvicorn app.main:app \
     --host 127.0.0.1 \
     --port 8000 \
-    --workers 2 \
+    --workers 4 \
     --log-level info &
 
 cd /app/frontend

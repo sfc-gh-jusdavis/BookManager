@@ -53,6 +53,8 @@ export type TMR = {
 
 export type RevenueSummary = {
   account_id: string;
+  net_acv: number | null;
+  net_tcv: number | null;
   contract_capacity: number | null;
   total_consumed_revenue: number | null;
   capacity_remaining: number | null;
@@ -74,6 +76,13 @@ export type NBAItem = {
   priority: "high" | "medium" | "low";
   text: string;
   summary: string;
+  lane: "client" | "admin";
+  category?: string | null;
+};
+
+export type NBAResponse = {
+  client: NBAItem[];
+  admin: NBAItem[];
 };
 
 function getMockUserId(): string | undefined {
@@ -90,10 +99,43 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-const DEFAULT_OPTS = { staleTime: 30_000, retry: 1 };
+const DEFAULT_OPTS = { staleTime: 300_000, retry: 1 };
+
+export type Account = {
+  account_id: string;
+  account_name: string;
+  industry?: string | null;
+  region?: string | null;
+  ace_assigned: string;
+  engagement_status: string;
+  status: string;
+  use_case_count: number;
+  total_credits_allocated?: number | null;
+  activation_start_date?: string | null;
+  acv?: number | null;
+  consumption_ytd?: number | null;
+  sig_pipeline?: number | null;
+  sig_aiml?: number | null;
+  health_score?: number | null;
+  momentum?: string | null;
+  wow_pct_change?: number | null;
+  new_adoption_30d?: string | null;
+  meetings_last_30d: number;
+  upcoming_meetings_5d: number;
+  last_meeting_date?: string | null;
+  emails_last_30d: number;
+  last_email_date?: string | null;
+  email_trend?: string | null;
+  no_recording: boolean;
+  lead_se_email?: string | null;
+  ae_email?: string | null;
+  ae_name?: string | null;
+  engagement_start_date?: string | null;
+  rolloff_date?: string | null;
+};
 
 export function useAccounts() {
-  return useQuery({ queryKey: ["accounts"], queryFn: () => apiFetch("/api/accounts"), ...DEFAULT_OPTS });
+  return useQuery({ queryKey: ["accounts"], queryFn: () => apiFetch<Account[]>("/api/accounts"), ...DEFAULT_OPTS });
 }
 
 export function useAccount(accountId: string) {
@@ -122,6 +164,28 @@ export function useAccountRevenueSummaries() {
 
 export function useAccountGongCalls(accountId: string) {
   return useQuery({ queryKey: ["account-gong-calls", accountId], queryFn: () => apiFetch(`/api/accounts/${accountId}/gong-calls`), ...DEFAULT_OPTS, enabled: !!accountId });
+}
+
+export interface UpcomingMeeting {
+  meeting_id: string;
+  account_id: string;
+  account_name?: string | null;
+  title?: string | null;
+  meeting_start?: string | null;
+  meeting_end?: string | null;
+  duration_mins?: number | null;
+  recording_url?: string | null;
+  participants?: string | null;
+  source?: string | null;
+}
+
+export function useUpcomingMeetings(accountId: string, limit = 5) {
+  return useQuery({
+    queryKey: ["account-upcoming-meetings", accountId, limit],
+    queryFn: () => apiFetch<UpcomingMeeting[]>(`/api/accounts/${accountId}/upcoming-meetings?limit=${limit}`),
+    ...DEFAULT_OPTS,
+    enabled: !!accountId,
+  });
 }
 
 export function useAccountResources(accountId: string) {
@@ -165,7 +229,7 @@ export function useAuthMe() {
 }
 
 export function useNBA() {
-  return useQuery({ queryKey: ["nba"], queryFn: () => apiFetch<NBAItem[]>("/api/nba"), ...DEFAULT_OPTS });
+  return useQuery({ queryKey: ["nba"], queryFn: () => apiFetch<NBAResponse>("/api/nba"), ...DEFAULT_OPTS });
 }
 
 export function useAdminCosts() {
@@ -177,6 +241,7 @@ export type AccountTracking = {
   account_name: string | null;
   tracking_status: "following" | "archived";
   notes: string | null;
+  notes_doc_url: string | null;
   updated_at: string | null;
 };
 
@@ -200,6 +265,13 @@ export function useRefreshAccount(accountId: string) {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
+    try {
+      // 1. Trigger backend SP to pull fresh data from Salesforce/Fivetran
+      await apiFetch(`/api/accounts/${accountId}/refresh`, { method: "POST" });
+    } catch (err) {
+      console.error("Account refresh failed:", err);
+    }
+    // 2. Invalidate caches to re-fetch updated data
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["account", accountId] }),
       qc.invalidateQueries({ queryKey: ["account-use-cases", accountId] }),
@@ -208,6 +280,8 @@ export function useRefreshAccount(accountId: string) {
       qc.invalidateQueries({ queryKey: ["account-gong-calls", accountId] }),
       qc.invalidateQueries({ queryKey: ["account-context", accountId] }),
       qc.invalidateQueries({ queryKey: ["account-situations", accountId] }),
+      qc.invalidateQueries({ queryKey: ["signal-counts"] }),
+      qc.invalidateQueries({ queryKey: ["alerts"] }),
     ]);
     setIsRefreshing(false);
   }, [qc, accountId]);
@@ -219,6 +293,13 @@ export function useRefreshBook() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
+    try {
+      // 1. Trigger backend SP to run full refresh pipeline
+      await apiFetch(`/api/book/refresh`, { method: "POST" });
+    } catch (err) {
+      console.error("Book refresh failed:", err);
+    }
+    // 2. Invalidate all book-level caches
     await Promise.all([
       qc.invalidateQueries({ queryKey: ["accounts"] }),
       qc.invalidateQueries({ queryKey: ["use-cases"] }),
@@ -229,6 +310,8 @@ export function useRefreshBook() {
       qc.invalidateQueries({ queryKey: ["account-timeline"] }),
       qc.invalidateQueries({ queryKey: ["manual-meetings"] }),
       qc.invalidateQueries({ queryKey: ["account-gong-calls"] }),
+      qc.invalidateQueries({ queryKey: ["alerts"] }),
+      qc.invalidateQueries({ queryKey: ["situations"] }),
     ]);
     setIsRefreshing(false);
   }, [qc]);
@@ -237,7 +320,7 @@ export function useRefreshBook() {
 
 export function useSetAccountTracking(accountId: string) {
   const qc = useQueryClient();
-  return useMutation<unknown, unknown, { status: "following" | "archived"; notes?: string }>({
+  return useMutation<unknown, unknown, { status: "following" | "archived"; notes?: string; notes_doc_url?: string | null }>({
     mutationFn: (body) =>
       apiFetch<AccountTracking>(`/api/accounts/${accountId}/tracking`, {
         method: "PUT",
@@ -272,7 +355,7 @@ export function useDeleteAccountTracking(accountId: string) {
 
 export function useUpdateAccountFields(accountId: string) {
   const qc = useQueryClient();
-  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean }, { previousDetail: unknown; previousList: unknown } | undefined>({
+  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean; engagement_start_date?: string | null; rolloff_date?: string | null }, { previousDetail: unknown; previousList: unknown } | undefined>({
     mutationFn: (body) =>
       apiFetch(`/api/accounts/${accountId}`, {
         method: "PATCH",
@@ -476,6 +559,8 @@ export type QuarterData = {
 export type AccountConsumptionProjection = {
   account_id: string;
   account_name: string;
+  net_acv: number | null;
+  net_tcv: number | null;
   contract_capacity: number | null;
   capacity_remaining: number | null;
   total_consumed_credits: number | null;
@@ -614,9 +699,74 @@ export function useMarkAlertRead() {
   return useMutation<unknown, unknown, string>({
     mutationFn: (alertId) =>
       apiFetch(`/api/alerts/${alertId}/read`, { method: "POST" }),
-    onSuccess: () => {
+    onMutate: async (alertId) => {
+      await qc.cancelQueries({ queryKey: ["alerts"] });
+      await qc.cancelQueries({ queryKey: ["account-alerts"] });
+      const previous = qc.getQueryData<AlertItem[]>(["alerts"]);
+      qc.setQueryData<AlertItem[]>(["alerts"], (old) =>
+        old?.map((a) => (a.alert_id === alertId ? { ...a, is_read: true } : a)) ?? []
+      );
+      const accountQueries = qc.getQueriesData<AlertItem[]>({ queryKey: ["account-alerts"] });
+      accountQueries.forEach(([key, data]) => {
+        if (!data) return;
+        qc.setQueryData<AlertItem[]>(key as readonly unknown[], data.map((a) => a.alert_id === alertId ? { ...a, is_read: true } : a));
+      });
+      const prevAccountQueries = accountQueries;
+      const prevCount = qc.getQueryData<{ count: number }>(["alert-count"]);
+      qc.setQueryData<{ count: number }>(["alert-count"], (old) =>
+        old ? { count: Math.max(0, old.count - 1) } : old
+      );
+      return { previous, prevCount, prevAccountQueries };
+    },
+    onError: (_err, _alertId, context: any) => {
+      if (context?.previous) qc.setQueryData(["alerts"], context.previous);
+      if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
+      if (context?.prevAccountQueries) {
+        (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
+          if (data) qc.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["alerts"] });
       qc.invalidateQueries({ queryKey: ["alert-count"] });
+      qc.invalidateQueries({ queryKey: ["account-alerts"] });
+    },
+  });
+}
+
+export function useMarkAllAlertsRead() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, void>({
+    mutationFn: () => apiFetch("/api/alerts/mark-all-read", { method: "POST" }),
+    onMutate: async () => {
+      await qc.cancelQueries({ queryKey: ["alerts"] });
+      await qc.cancelQueries({ queryKey: ["account-alerts"] });
+      const previous = qc.getQueryData<AlertItem[]>(["alerts"]);
+      qc.setQueryData<AlertItem[]>(["alerts"], (old) =>
+        old?.map((a) => ({ ...a, is_read: true })) ?? []
+      );
+      const accountQueries = qc.getQueriesData<AlertItem[]>({ queryKey: ["account-alerts"] });
+      accountQueries.forEach(([key, data]) => {
+        if (!data) return;
+        qc.setQueryData<AlertItem[]>(key as readonly unknown[], data.map((a) => ({ ...a, is_read: true })));
+      });
+      const prevAccountQueries = accountQueries;
+      qc.setQueryData<{ count: number }>(["alert-count"], { count: 0 });
+      return { previous, prevAccountQueries };
+    },
+    onError: (_err, _v, context: any) => {
+      if (context?.previous) qc.setQueryData(["alerts"], context.previous);
+      if (context?.prevAccountQueries) {
+        (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
+          if (data) qc.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: ["alerts"] });
+      qc.invalidateQueries({ queryKey: ["alert-count"] });
+      qc.invalidateQueries({ queryKey: ["account-alerts"] });
     },
   });
 }
@@ -626,9 +776,41 @@ export function useDismissAlert() {
   return useMutation<unknown, unknown, string>({
     mutationFn: (alertId) =>
       apiFetch(`/api/alerts/${alertId}/dismiss`, { method: "POST" }),
-    onSuccess: () => {
+    onMutate: async (alertId) => {
+      await qc.cancelQueries({ queryKey: ["alerts"] });
+      await qc.cancelQueries({ queryKey: ["account-alerts"] });
+      const previous = qc.getQueryData<AlertItem[]>(["alerts"]);
+      const dismissed = previous?.find((a) => a.alert_id === alertId);
+      qc.setQueryData<AlertItem[]>(["alerts"], (old) =>
+        old?.filter((a) => a.alert_id !== alertId) ?? []
+      );
+      const accountQueries = qc.getQueriesData<AlertItem[]>({ queryKey: ["account-alerts"] });
+      accountQueries.forEach(([key, data]) => {
+        if (!data) return;
+        qc.setQueryData<AlertItem[]>(key as readonly unknown[], data.filter((a) => a.alert_id !== alertId));
+      });
+      const prevAccountQueries = accountQueries;
+      const prevCount = qc.getQueryData<{ count: number }>(["alert-count"]);
+      if (dismissed && !dismissed.is_read) {
+        qc.setQueryData<{ count: number }>(["alert-count"], (old) =>
+          old ? { count: Math.max(0, old.count - 1) } : old
+        );
+      }
+      return { previous, prevCount, prevAccountQueries };
+    },
+    onError: (_err, _alertId, context: any) => {
+      if (context?.previous) qc.setQueryData(["alerts"], context.previous);
+      if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
+      if (context?.prevAccountQueries) {
+        (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
+          if (data) qc.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["alerts"] });
       qc.invalidateQueries({ queryKey: ["alert-count"] });
+      qc.invalidateQueries({ queryKey: ["account-alerts"] });
     },
   });
 }
@@ -641,9 +823,41 @@ export function useMuteAlert() {
         method: "POST",
         body: JSON.stringify({ scope, duration_days }),
       }),
-    onSuccess: () => {
+    onMutate: async ({ alertId }) => {
+      await qc.cancelQueries({ queryKey: ["alerts"] });
+      await qc.cancelQueries({ queryKey: ["account-alerts"] });
+      const previous = qc.getQueryData<AlertItem[]>(["alerts"]);
+      const muted = previous?.find((a) => a.alert_id === alertId);
+      qc.setQueryData<AlertItem[]>(["alerts"], (old) =>
+        old?.filter((a) => a.alert_id !== alertId) ?? []
+      );
+      const accountQueries = qc.getQueriesData<AlertItem[]>({ queryKey: ["account-alerts"] });
+      accountQueries.forEach(([key, data]) => {
+        if (!data) return;
+        qc.setQueryData<AlertItem[]>(key as readonly unknown[], data.filter((a) => a.alert_id !== alertId));
+      });
+      const prevAccountQueries = accountQueries;
+      const prevCount = qc.getQueryData<{ count: number }>(["alert-count"]);
+      if (muted && !muted.is_read) {
+        qc.setQueryData<{ count: number }>(["alert-count"], (old) =>
+          old ? { count: Math.max(0, old.count - 1) } : old
+        );
+      }
+      return { previous, prevCount, prevAccountQueries };
+    },
+    onError: (_err, _vars, context: any) => {
+      if (context?.previous) qc.setQueryData(["alerts"], context.previous);
+      if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
+      if (context?.prevAccountQueries) {
+        (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
+          if (data) qc.setQueryData(key, data);
+        });
+      }
+    },
+    onSettled: () => {
       qc.invalidateQueries({ queryKey: ["alerts"] });
       qc.invalidateQueries({ queryKey: ["alert-count"] });
+      qc.invalidateQueries({ queryKey: ["account-alerts"] });
     },
   });
 }
@@ -821,7 +1035,7 @@ export type MeetingPrep = {
   doc_links: string | null;
 };
 
-export type DocLink = { url: string; title: string };
+export type DocLink = { url: string; title: string; source?: "seismic" | "docs" };
 export type MeetingRecap = {
   title: string;
   date: string;
@@ -874,6 +1088,30 @@ export function useRefreshMeetingPrep(accountId: string) {
       }),
     onSuccess: (data) => {
       qc.setQueryData(["meeting-prep", accountId], data);
+    },
+  });
+}
+
+export function useSaveMeetingPrepContext(accountId: string) {
+  const qc = useQueryClient();
+  return useMutation<
+    { meeting_id: string; status: string },
+    unknown,
+    { content: string; classification?: string; title?: string; context_date?: string }
+  >({
+    mutationFn: (body) =>
+      apiFetch<{ meeting_id: string; status: string }>(
+        `/api/accounts/${accountId}/meeting-prep/context`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ classification: "notes", ...body }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["account-timeline", accountId] });
+      qc.invalidateQueries({ queryKey: ["manual-meetings", accountId] });
+      qc.invalidateQueries({ queryKey: ["account-context", accountId] });
     },
   });
 }

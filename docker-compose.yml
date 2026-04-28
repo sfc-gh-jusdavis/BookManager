@@ -11,6 +11,7 @@ services:
       - ~/.snowflake:/root/.snowflake:ro
     env_file:
       - .env
+      - ./backend/.env
     environment:
       - APP_ENV=development
 

@@ -28,21 +28,30 @@ class SignalRegistry:
         deduped.sort(key=lambda s: rank.get(s.priority, 2))
         return deduped
 
-    def get_nba_items(self, cur, scope: SignalScope, cap: int = 8):
+    def get_nba_items(self, cur, scope: SignalScope, cap: int = 8, cap_client: int = 10, cap_admin: int = 8):
         from app.models.nba import NBAItem
-        signals = self.collect_all(cur, scope)[:cap]
-        return [
-            NBAItem(
-                id=s.id,
-                signal_type=s.signal_type,
-                account_id=s.account_id,
-                account_name=s.account_name,
-                priority=s.priority,
-                text=s.text,
-                summary=s.summary,
-            )
-            for s in signals
-        ]
+        signals = self.collect_all(cur, scope)
+
+        client_signals = [s for s in signals if s.lane == "client"][:cap_client]
+        admin_signals  = [s for s in signals if s.lane == "admin"][:cap_admin]
+
+        def _to_nba(sigs: list[Signal]) -> list[NBAItem]:
+            return [
+                NBAItem(
+                    id=s.id,
+                    signal_type=s.signal_type,
+                    account_id=s.account_id,
+                    account_name=s.account_name,
+                    priority=s.priority,
+                    text=s.text,
+                    summary=s.summary,
+                    lane=s.lane,
+                    category=s.category,
+                )
+                for s in sigs
+            ]
+
+        return _to_nba(client_signals), _to_nba(admin_signals)
 
     def get_ai_context(self, cur, scope: SignalScope, limit: int = 6) -> str:
         signals = self.collect_all(cur, scope)[:limit]

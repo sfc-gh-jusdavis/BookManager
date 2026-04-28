@@ -8,7 +8,7 @@ create or replace task TASK_REFRESH_BKMNG_ACCOUNTS
     INSERT INTO TEMP.JUSDAVIS.BKMNG_ACCOUNTS (
         ACCOUNT_ID, ACCOUNT_NAME, INDUSTRY, REGION,
         ACE_USER_ID, ACE_ASSIGNED,
-        LEAD_SE_EMAIL, AE_EMAIL,
+        LEAD_SE_EMAIL, AE_EMAIL, AE_NAME,
         ENGAGEMENT_STATUS, STATUS,
         ACTIVATION_START_DATE, TOTAL_CREDITS_ALLOCATED,
         ACV, CONSUMPTION_YTD, REFRESHED_AT
@@ -21,7 +21,8 @@ create or replace task TASK_REFRESH_BKMNG_ACCOUNTS
         atm.USER_ID,
         u.EMAIL                             AS ACE_ASSIGNED,
         lse.EMAIL                           AS LEAD_SE_EMAIL,
-        ae.EMAIL                            AS AE_EMAIL,
+        ao.EMAIL                            AS AE_EMAIL,
+        ao.NAME                             AS AE_NAME,
         'Normal'                            AS ENGAGEMENT_STATUS,
         'active'                            AS STATUS,
         NULL, NULL,
@@ -39,9 +40,9 @@ create or replace task TASK_REFRESH_BKMNG_ACCOUNTS
     LEFT JOIN FIVETRAN.SALESFORCE.USER lse
         ON lse.ID = a.LEAD_SALES_ENGINEER_C
         AND lse._FIVETRAN_DELETED = FALSE
-    LEFT JOIN FIVETRAN.SALESFORCE.USER ae
-        ON ae.ID = a.ACCOUNT_EXECUTIVE_C
-        AND ae._FIVETRAN_DELETED = FALSE
+    LEFT JOIN FIVETRAN.SALESFORCE.USER ao
+        ON ao.ID = a.OWNER_ID
+        AND ao._FIVETRAN_DELETED = FALSE
     WHERE a.IS_DELETED = FALSE
     QUALIFY ROW_NUMBER() OVER (PARTITION BY a.ID ORDER BY u.EMAIL) = 1;
 END;

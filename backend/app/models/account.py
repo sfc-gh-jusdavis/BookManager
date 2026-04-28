@@ -32,6 +32,9 @@ class Account(BaseModel):
     no_recording: bool = False
     lead_se_email: Optional[str] = None
     ae_email: Optional[str] = None
+    ae_name: Optional[str] = None
+    engagement_start_date: Optional[date] = None
+    rolloff_date: Optional[date] = None
 
 
 class ManualMeeting(BaseModel):

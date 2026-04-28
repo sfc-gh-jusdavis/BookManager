@@ -85,6 +85,38 @@ async def list_accounts(
     return data.list_accounts(_ace_filter(user), _acem_filter(user))
 
 
+@router.post("/accounts/{account_id}/refresh")
+async def refresh_account(
+    account_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    """Manually refresh data for a single account. Pulls fresh use cases (incl. PS notes)
+    and Gong calls from Salesforce/Fivetran, then rebuilds ONT row, signals,
+    composite patterns, and user alerts for this account."""
+    try:
+        result = data.manual_refresh_account(account_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Refresh failed: {exc}")
+    return {"status": "ok", "account_id": account_id, "result": result}
+
+
+@router.post("/book/refresh")
+async def refresh_book(
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    """Manually refresh the full book-level data pipeline end-to-end.
+    Runs Salesforce source refreshes (accounts, use cases, Gong calls) then
+    rebuilds ONT tables, signals, composite patterns, and user alerts.
+    Equivalent to running the scheduled task chain on-demand."""
+    try:
+        result = data.manual_refresh_book()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=f"Book refresh failed: {exc}")
+    return {"status": "ok", "result": result}
+
+
 class SignalCountEntry(BaseModel):
     high: int = 0
     medium: int = 0
@@ -176,7 +208,7 @@ async def set_account_tracking(
 ) -> AccountTracking:
     acct = data.get_account(account_id)
     account_name = acct.account_name if acct else None
-    result = data.set_account_tracking(account_id, user.email, body.status, account_name, body.notes)
+    result = data.set_account_tracking(account_id, user.email, body.status, account_name, body.notes, body.notes_doc_url)
     return AccountTracking(**result)
 
 
@@ -184,6 +216,8 @@ class UpdateAccountFieldsRequest(BaseModel):
     status: Optional[str] = None
     engagement_status: Optional[str] = None
     no_recording: Optional[bool] = None
+    engagement_start_date: Optional[str] = None
+    rolloff_date: Optional[str] = None
 
 
 VALID_STATUSES = {"not started", "active", "complete", "stopped", "paused"}
@@ -201,7 +235,7 @@ async def update_account_fields(
         raise HTTPException(status_code=422, detail=f"Invalid status: {body.status}")
     if body.engagement_status is not None and body.engagement_status not in VALID_ENGAGEMENTS:
         raise HTTPException(status_code=422, detail=f"Invalid engagement_status: {body.engagement_status}")
-    data.update_account_fields(account_id, body.status, body.engagement_status, body.no_recording)
+    data.update_account_fields(account_id, body.status, body.engagement_status, body.no_recording, body.engagement_start_date, body.rolloff_date, updated_by=user.email)
     return {"account_id": account_id, "ok": True}
 
 
@@ -373,6 +407,45 @@ async def refresh_meeting_prep(
     return data.generate_meeting_prep(account_id, account_name, user.email, body.additional_context)
 
 
+class SaveMeetingPrepContextRequest(BaseModel):
+    content: str
+    classification: str = "notes"
+    title: Optional[str] = None
+    context_date: Optional[str] = None
+
+
+@router.post("/accounts/{account_id}/meeting-prep/context", status_code=201)
+async def save_meeting_prep_context(
+    account_id: str,
+    body: SaveMeetingPrepContextRequest,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    if not body.content or not body.content.strip():
+        raise HTTPException(status_code=400, detail="content is empty")
+    acct = data.get_account(account_id)
+    account_name = acct.account_name if acct else None
+    saved = data.add_timeline_context(
+        account_id=account_id,
+        account_name=account_name,
+        classification=body.classification,
+        content=body.content,
+        title=body.title,
+        context_date=body.context_date,
+        created_by=user.email,
+    )
+    data.summarize_timeline_context(
+        saved["meeting_id"],
+        account_id,
+        account_name,
+        body.content,
+        body.classification,
+        user.email,
+        auto_title=not (body.title and body.title.strip()),
+    )
+    return {"meeting_id": saved["meeting_id"], "status": "saved_and_summarized"}
+
+
 class GeneratePrepEmailRequest(BaseModel):
     recipient_name: str = ""
     meeting_date: str = ""
@@ -432,6 +505,16 @@ async def get_account_meetings(
     data: SnowflakeDataService = Depends(get_data_service),
 ) -> list[MeetingActivity]:
     return data.list_meetings_for_account(account_id, limit=limit, upcoming_only=upcoming_only)
+
+
+@router.get("/accounts/{account_id}/upcoming-meetings")
+async def get_account_upcoming_meetings(
+    account_id: str,
+    limit: int = 10,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> list[dict]:
+    return data.list_upcoming_meetings(account_id, limit=limit)
 
 
 @router.get("/accounts/{account_id}/email-activity", response_model=EmailActivity)

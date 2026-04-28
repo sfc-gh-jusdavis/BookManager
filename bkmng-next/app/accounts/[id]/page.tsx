@@ -5,10 +5,10 @@ import Link from "next/link";
 import { useParams, useSearchParams } from "next/navigation";
 import {
   ArrowLeft, Calendar, MapPin, Users, Clock, Plus, FileText, Sparkles, Bookmark, BookmarkCheck, Archive, ChevronDown, Cpu,
-  CalendarCheck2, Mail, TrendingDown, TrendingUp, AlertTriangle, VideoOff, Video, RefreshCw, Layers, BarChart3, List,
+  CalendarCheck2, Mail, TrendingDown, TrendingUp, AlertTriangle, VideoOff, Video, RefreshCw, Layers, BarChart3, List, ExternalLink, Pencil, Check, X,
 } from "lucide-react";
 import {
-  useAccount, useAccountUseCases, useAccountGongCalls,
+  useAccount, useAccountUseCases, useAccountGongCalls, useUpcomingMeetings,
   useAceDisplayNames, useAccountRevenueSummary,
   useAccountTracking, useSetAccountTracking, useDeleteAccountTracking,
   useAccountAdoption, useMeetingActivity, useEmailActivity,
@@ -16,6 +16,7 @@ import {
   useRefreshAccount,
   useAddTimelineContext, useDeleteTimelineContext,
   useAccountBreakdowns, useAccountAlerts, useMarkAlertRead, useDismissAlert,
+  useMuteAlert, useSecurityPosture,
 } from "@/hooks/useApi";
 import type { GongCall, AccountAdoptionData, MeetingActivity, EmailActivity, ContextNote, AccountBriefing, UseCaseBreakdownItem, AlertItem } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,6 +24,11 @@ import { NotesTimeline } from "@/components/account-detail/NotesTimeline";
 import { AIChatPanel } from "@/components/account-detail/AIChatPanel";
 import { MeetingPrepView } from "@/components/account-detail/MeetingPrepView";
 import { SecurityPostureChecklist } from "@/components/account-detail/SecurityPostureChecklist";
+import { AlertsTile } from "@/components/account-detail/health/AlertsTile";
+import { EngagementTile } from "@/components/account-detail/health/EngagementTile";
+import { AdoptionTile } from "@/components/account-detail/health/AdoptionTile";
+import { SecurityTile, deriveSecuritySummary } from "@/components/account-detail/health/SecurityTile";
+import { AlertRow } from "@/components/alerts/AlertRow";
 import type { NBAContext } from "@/components/dashboard/ACEChat";
 import { useAuth } from "@/context/AuthContext";
 import { sfUseCaseUrl } from "@/lib/utils";
@@ -50,6 +56,8 @@ type Resource = {
 
 type RevenueSummary = {
   account_id: string;
+  net_acv: number | null;
+  net_tcv: number | null;
   contract_capacity: number | null;
   total_consumed_revenue: number | null;
   capacity_remaining: number | null;
@@ -71,6 +79,9 @@ type AccountData = {
   no_recording?: boolean;
   lead_se_email?: string | null;
   ae_email?: string | null;
+  ae_name?: string | null;
+  engagement_start_date?: string | null;
+  rolloff_date?: string | null;
 };
 
 function formatDate(iso: string | null | undefined): string {
@@ -339,6 +350,7 @@ function GanttTimeline({ items }: { items: UseCaseBreakdownItem[] }) {
                   <span className="ml-auto text-[9px] text-white/80 shrink-0 pl-1">{bar.days}d</span>
                 </div>
               </div>
+
             );
           })}
         </div>
@@ -558,8 +570,8 @@ function UseCaseCard({ uc, accountStatus }: { uc: UseCase; accountStatus?: strin
   );
 }
 
-type TabKey = "overview" | "adoption" | "timeline" | "alerts" | "prep" | "assistant";
-const VALID_TABS: TabKey[] = ["overview", "adoption", "timeline", "alerts", "prep", "assistant"];
+type TabKey = "overview" | "adoption" | "timeline" | "prep" | "assistant";
+const VALID_TABS: TabKey[] = ["overview", "adoption", "timeline", "prep", "assistant"];
 
 export default function AccountDetailPage() {
   const params = useParams<{ id: string }>();
@@ -578,6 +590,8 @@ export default function AccountDetailPage() {
   }, [searchParams]);
 
   const [editingField, setEditingField] = useState<"status" | "engagement" | null>(null);
+  const [editingNotesDocUrl, setEditingNotesDocUrl] = useState(false);
+  const [notesDocUrlInput, setNotesDocUrlInput] = useState("");
   const [myPaneOpen, setMyPaneOpen] = useState(true);
   const [otherPaneOpen, setOtherPaneOpen] = useState(false);
   const [showContextInput, setShowContextInput] = useState(false);
@@ -598,15 +612,22 @@ export default function AccountDetailPage() {
   const { data: account, isLoading: accLoading } = useAccount(accountId) as { data: AccountData | undefined; isLoading: boolean };
   const { data: useCases = [] } = useAccountUseCases(accountId) as { data: UseCase[] };
   const { data: gongCallsRaw = [] } = useAccountGongCalls(accountId) as { data: GongCall[] };
+  const { data: upcomingMeetings = [] } = useUpcomingMeetings(accountId, 5);
   const { data: meetings = [] } = useMeetingActivity(accountId, false) as { data: MeetingActivity[] };
   const { data: emailActivity } = useEmailActivity(accountId) as { data: EmailActivity | undefined };
   const { data: revenueSummary } = useAccountRevenueSummary(accountId) as { data: RevenueSummary | undefined };
   const { data: accountAlerts = [], isLoading: alertsLoading } = useAccountAlerts(accountId);
   const markRead = useMarkAlertRead();
   const dismissAlert = useDismissAlert();
+  const muteAlert = useMuteAlert();
+  const { data: securityPosture } = useSecurityPosture(tab === "adoption" ? accountId : "");
+  const [openTile, setOpenTile] = useState<"alerts" | "engagement" | "adoption" | "security" | null>(null);
   const { data: aceDisplayNames = {} } = useAceDisplayNames() as { data: Record<string, string> };
   const { data: trackingStatus } = useAccountTracking(accountId);
-  const { data: adoption } = useAccountAdoption(accountId) as { data: AccountAdoptionData | undefined };
+  useEffect(() => {
+    if (trackingStatus) setNotesDocUrlInput(trackingStatus.notes_doc_url ?? "");
+  }, [trackingStatus]);
+  const { data: adoption } = useAccountAdoption(tab === "adoption" ? accountId : "") as { data: AccountAdoptionData | undefined };
   const setTracking = useSetAccountTracking(accountId);
   const deleteTracking = useDeleteAccountTracking(accountId);
   const updateAccount = useUpdateAccountFields(accountId);
@@ -630,6 +651,17 @@ export default function AccountDetailPage() {
     const now = new Date();
     return meetings.filter((m) => m.is_upcoming || (m.activity_date != null && new Date(m.activity_date + "T00:00:00") > now));
   }, [meetings]);
+
+  const securitySummary = securityPosture ? deriveSecuritySummary(securityPosture) : null;
+
+  const hasUnreadAlerts = (accountAlerts as AlertItem[]).some((a) => !a.is_read);
+  const [openTileInitialized, setOpenTileInitialized] = useState(false);
+  useEffect(() => {
+    if (!openTileInitialized && !alertsLoading && tab === "adoption") {
+      setOpenTileInitialized(true);
+      if (hasUnreadAlerts) setOpenTile("alerts");
+    }
+  }, [openTileInitialized, alertsLoading, tab, hasUnreadAlerts]);
 
   const isMyUseCase = useCallback(
     (uc: UseCase) =>
@@ -683,7 +715,6 @@ export default function AccountDetailPage() {
     { key: "overview", label: "Overview" },
     { key: "adoption", label: "Account Health" },
     { key: "timeline", label: "Timeline" },
-    { key: "alerts", label: "Alerts" },
     { key: "prep", label: "Meeting Prep" },
     { key: "assistant", label: "ACE" },
   ];
@@ -768,6 +799,33 @@ export default function AccountDetailPage() {
               {account.no_recording ? "No Recording" : "Recorded"}
             </button>
           </div>
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider px-1">Engagement Start</span>
+            <input
+              type="date"
+              value={account.engagement_start_date ? account.engagement_start_date.slice(0, 10) : ""}
+              onChange={(e) => {
+                const val = e.target.value || null;
+                const rolloff = val ? new Date(new Date(val).getTime() + 90 * 86400000).toISOString().slice(0, 10) : null;
+                updateAccount.mutate({
+                  engagement_start_date: val,
+                  ...(!account.rolloff_date ? { rolloff_date: rolloff } : {}),
+                });
+              }}
+              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 hover:border-sky-300 focus:outline-none focus:border-sky-400 transition-colors"
+            />
+          </div>
+          <div className="flex flex-col items-start gap-0.5">
+            <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider px-1">Est. Roll-off</span>
+            <input
+              type="date"
+              value={account.rolloff_date ? account.rolloff_date.slice(0, 10) : ""}
+              onChange={(e) => {
+                updateAccount.mutate({ rolloff_date: e.target.value || null });
+              }}
+              className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 hover:border-sky-300 focus:outline-none focus:border-sky-400 transition-colors"
+            />
+          </div>
           <button
             type="button"
             onClick={refreshAccount}
@@ -807,6 +865,71 @@ export default function AccountDetailPage() {
                 <Archive size={11} /> Archive
               </button>
             </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <FileText size={12} className="text-slate-400 shrink-0" />
+          <span className="font-medium text-slate-500">Notes doc:</span>
+          {editingNotesDocUrl ? (
+            <div className="flex items-center gap-1.5 flex-1">
+              <input
+                type="url"
+                value={notesDocUrlInput}
+                onChange={(e) => setNotesDocUrlInput(e.target.value)}
+                placeholder="https://docs.google.com/…"
+                autoFocus
+                className="flex-1 max-w-sm rounded border border-sky-300 bg-white px-2 py-0.5 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const url = notesDocUrlInput.trim() || null;
+                  const status = trackingStatus?.tracking_status ?? "following";
+                  setTracking.mutate({ status, notes_doc_url: url });
+                  setEditingNotesDocUrl(false);
+                }}
+                disabled={setTracking.isPending}
+                className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] font-medium bg-sky-50 text-sky-700 border border-sky-200 hover:bg-sky-100 transition-colors disabled:opacity-50"
+              >
+                <Check size={11} /> Save
+              </button>
+              <button
+                type="button"
+                onClick={() => { setNotesDocUrlInput(trackingStatus?.notes_doc_url ?? ""); setEditingNotesDocUrl(false); }}
+                className="inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[11px] text-slate-400 border border-slate-200 hover:text-slate-600 hover:border-slate-300 transition-colors"
+              >
+                <X size={11} />
+              </button>
+            </div>
+          ) : trackingStatus?.notes_doc_url ? (
+            <div className="flex items-center gap-1.5">
+              <a
+                href={trackingStatus.notes_doc_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-700 hover:underline max-w-xs truncate"
+              >
+                <ExternalLink size={11} />
+                {trackingStatus.notes_doc_url.replace(/^https?:\/\//, "").slice(0, 60)}
+              </a>
+              <button
+                type="button"
+                onClick={() => { setNotesDocUrlInput(trackingStatus.notes_doc_url ?? ""); setEditingNotesDocUrl(true); }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+                title="Edit notes doc link"
+              >
+                <Pencil size={11} />
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setEditingNotesDocUrl(true)}
+              className="text-slate-400 hover:text-sky-600 transition-colors text-[11px] italic"
+            >
+              + Add link
+            </button>
           )}
         </div>
 
@@ -850,7 +973,7 @@ export default function AccountDetailPage() {
               <span className="text-slate-300">·</span>
               <span className="text-slate-400 font-medium">AE:</span>
               <span className="inline-flex items-center rounded-full bg-amber-50 border border-amber-200 px-2.5 py-1 text-amber-700">
-                {account.ae_email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                {account.ae_name ?? account.ae_email.split("@")[0].replace(".", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
               </span>
             </>
           )}
@@ -883,8 +1006,8 @@ export default function AccountDetailPage() {
                     <p className="text-sm font-bold text-slate-800">
                       {revenueSummary?.total_consumed_revenue != null ? dollarShort(revenueSummary.total_consumed_revenue) : "—"}
                     </p>
-                    {revenueSummary?.contract_capacity != null && (
-                      <p className="text-[11px] text-slate-500">of {dollarShort(revenueSummary.contract_capacity)}</p>
+                    {revenueSummary?.net_acv != null && (
+                      <p className="text-[11px] text-slate-500">ACV {dollarShort(revenueSummary.net_acv)}{revenueSummary.net_tcv != null ? ` · TCV ${dollarShort(revenueSummary.net_tcv)}` : ""}</p>
                     )}
                   </div>
                   <div>
@@ -908,6 +1031,29 @@ export default function AccountDetailPage() {
                   </div>
                 </div>
               </div>
+
+              {upcomingMeetings.length > 0 && (
+                <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                    <CalendarCheck2 size={12} className="text-emerald-500" /> Upcoming Meetings
+                  </p>
+                  <ul className="space-y-1.5">
+                    {upcomingMeetings.map((m) => (
+                      <li key={m.meeting_id} className="text-xs text-slate-700">
+                        <span className="font-medium text-slate-500">
+                          {m.meeting_start ? new Date(m.meeting_start).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                          {m.meeting_start ? ` · ${new Date(m.meeting_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}` : ""}
+                        </span>
+                        <span className="mx-1 text-slate-300">·</span>
+                        <span className="text-slate-800">{m.title ?? "(untitled)"}</span>
+                        {m.duration_mins != null && (
+                          <span className="text-slate-400"> · {m.duration_mins}m</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               {!briefingLoading && briefing && !briefing.error && briefing.situation_summary && (
                 <div className="rounded-xl border border-sky-200 bg-gradient-to-b from-sky-50 to-white shadow-sm p-4">
@@ -1131,141 +1277,7 @@ export default function AccountDetailPage() {
             </div>
           )}
 
-          {tab === "alerts" && (
-            <div className="space-y-6">
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm font-semibold text-slate-700 flex items-center gap-2">
-                    <AlertTriangle size={14} className="text-amber-500" />
-                    Alerts
-                    {accountAlerts.length > 0 && (
-                      <span className="inline-flex items-center justify-center h-5 min-w-[20px] rounded-full bg-red-500 text-[10px] font-bold text-white px-1.5">
-                        {accountAlerts.length}
-                      </span>
-                    )}
-                  </p>
-                </div>
-                {alertsLoading ? (
-                  <p className="text-sm text-slate-400">Loading…</p>
-                ) : accountAlerts.length === 0 ? (
-                  <p className="text-sm text-slate-400">No active alerts for this account.</p>
-                ) : (
-                  <div className="space-y-0 divide-y divide-slate-100">
-                    {(accountAlerts as AlertItem[]).map((alert) => (
-                      <div key={alert.alert_id} className="py-3 first:pt-0 group flex items-start gap-3">
-                        <span className={`mt-1.5 h-2.5 w-2.5 rounded-full shrink-0 ${alert.priority === "high" ? "bg-red-500" : alert.priority === "medium" ? "bg-amber-500" : "bg-slate-300"}`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                              {alert.signal_type.replace(/_/g, " ")}
-                            </span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium ${alert.priority === "high" ? "bg-red-50 text-red-600 border border-red-100" : alert.priority === "medium" ? "bg-amber-50 text-amber-600 border border-amber-100" : "bg-slate-50 text-slate-500 border border-slate-100"}`}>
-                              {alert.priority}
-                            </span>
-                          </div>
-                          <p className="text-xs text-slate-600">{alert.text ?? "—"}</p>
-                          {alert.created_at && (
-                            <p className="text-[10px] text-slate-400 mt-0.5">{formatDate(alert.created_at)}</p>
-                          )}
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => dismissAlert.mutate(alert.alert_id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity text-xs text-slate-400 hover:text-slate-600 shrink-0 px-2 py-1 rounded hover:bg-slate-100"
-                          title="Dismiss"
-                        >Dismiss</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <p className="text-sm font-semibold text-slate-700">Context Notes</p>
-                  <button type="button" onClick={() => setShowContextInput((v) => !v)}
-                    className="inline-flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 transition-colors">
-                    <Plus size={11} /> {showContextInput ? "Close" : "Add Context"}
-                  </button>
-                </div>
-
-                {showContextInput && (
-                  <div className="mb-4 space-y-2 p-4 rounded-lg bg-slate-50 border border-slate-200">
-                    <select value={contextType} onChange={(e) => setContextType(e.target.value)}
-                      className="w-full rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-700 bg-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400">
-                      <option value="note">Observation</option>
-                      <option value="email">Email</option>
-                      <option value="meeting_note">Meeting Note</option>
-                      <option value="slack">Slack</option>
-                    </select>
-                    <textarea
-                      placeholder="Paste an email, meeting notes, or quick observation here…"
-                      value={contextText}
-                      onChange={(e) => setContextText(e.target.value)}
-                      rows={5}
-                      className="w-full resize-none rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs text-slate-800 placeholder:text-slate-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                    />
-                    {contextResult && (
-                      <div className="rounded-lg bg-sky-50 border border-sky-100 p-2.5 space-y-1">
-                        {contextResult.sentiment && (
-                          <p className="text-[11px] text-slate-600">
-                            <span className="font-medium">Sentiment:</span>{" "}
-                            <span className={contextResult.sentiment === "frustration" || contextResult.sentiment === "urgent" ? "text-red-600 font-medium" : contextResult.sentiment === "positive" ? "text-green-600" : "text-slate-600"}>
-                              {contextResult.sentiment}
-                            </span>
-                          </p>
-                        )}
-                        {contextResult.summary && (
-                          <p className="text-[11px] text-slate-600"><span className="font-medium">Summary:</span> {contextResult.summary}</p>
-                        )}
-                      </div>
-                    )}
-                    <div className="flex items-center justify-end gap-2">
-                      <button type="button" onClick={() => { setShowContextInput(false); setContextText(""); setContextResult(null); }}
-                        className="rounded px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
-                      <button type="button"
-                        disabled={!contextText.trim() || contextSubmitting}
-                        onClick={async () => {
-                          if (!contextText.trim()) return;
-                          setContextSubmitting(true);
-                          setContextResult(null);
-                          try {
-                            const res = await addContext.mutateAsync({ content: contextText, context_type: contextType, source: "manual" });
-                            setContextResult({ summary: res.summary ?? null, sentiment: res.sentiment ?? null });
-                            setContextText("");
-                          } finally {
-                            setContextSubmitting(false);
-                          }
-                        }}
-                        className="rounded bg-sky-500 px-2.5 py-1 text-xs text-white hover:bg-sky-600 disabled:opacity-40">
-                        {contextSubmitting ? "Analyzing…" : "Submit"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {contextNotes.length > 0 ? (
-                  <div className="space-y-2 divide-y divide-slate-50">
-                    {(contextNotes as ContextNote[]).map((note, i) => (
-                      <div key={note.context_id ?? i} className="pt-2 first:pt-0">
-                        <div className="flex items-center gap-1.5 mb-0.5">
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
-                            note.sentiment === "frustration" || note.sentiment === "urgent" ? "bg-red-50 text-red-600" :
-                            note.sentiment === "positive" ? "bg-green-50 text-green-600" :
-                            "bg-slate-100 text-slate-500"
-                          }`}>{note.sentiment ?? note.context_type ?? "note"}</span>
-                          <span className="text-[10px] text-slate-400">{note.created_at ? new Date(note.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : ""}</span>
-                        </div>
-                        <p className="text-xs text-slate-600">{note.parsed_summary ?? note.content}</p>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  !showContextInput && <p className="text-xs text-slate-400">No context added yet.</p>
-                )}
-              </div>
-            </div>
-          )}
 
           {tab === "prep" && (
             <MeetingPrepView
@@ -1288,75 +1300,229 @@ export default function AccountDetailPage() {
                 useCases={useCases}
                 gongCalls={gongCalls}
                 initialPrompt={nbaContext ? `I'm looking at this account because of the following alert — ${nbaContext.summary || nbaContext.text}. What should I know and what actions do you recommend?` : undefined}
+                signalTypes={Array.from(new Set((accountAlerts || []).map((a) => a.signal_type).filter(Boolean)))}
               />
             </div>
           )}
 
           {tab === "adoption" && (
-            <>
-            <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <div className="flex items-center gap-1.5 mb-3">
-                <Cpu size={13} className="text-slate-400" />
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Platform Adoption{adoption?.signals ? ` (${adoption.signals.signal_count}/8 categories)` : ""}
-                </p>
-              </div>
-              {!adoption?.signals ? (
-                <p className="text-xs text-slate-400 py-2">This client is not using features at this time.</p>
-              ) : (
-                <>
-                  <div className="grid grid-cols-4 gap-2 mb-4">
-                    {([
-                      { key: "sig_pipeline", label: "Pipeline" },
-                      { key: "sig_transforms", label: "Transforms" },
-                      { key: "sig_bi", label: "BI" },
-                      { key: "sig_cost", label: "Cost Gov" },
-                      { key: "sig_collab", label: "Collab" },
-                      { key: "sig_obs", label: "Observability" },
-                      { key: "sig_aiml", label: "AI/ML" },
-                      { key: "sig_spcs", label: "SPCS" },
-                    ] as const).map(({ key, label }) => {
-                      const active = (adoption.signals as unknown as Record<string, number>)[key] === 1;
-                      return (
-                        <div key={key} className={`rounded-lg border p-2 text-center ${active ? "border-emerald-200 bg-emerald-50" : "border-slate-100 bg-slate-50 opacity-50"}`}>
-                          <p className={`text-[10px] font-medium leading-tight ${active ? "text-emerald-700" : "text-slate-400"}`}>{label}</p>
-                          <span className={`inline-block mt-1 text-[8px] font-semibold uppercase ${active ? "text-emerald-500" : "text-slate-300"}`}>{active ? "active" : "none"}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  {adoption.features.length > 0 ? (
-                    <>
-                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Feature History ({adoption.features.length})</p>
-                      <div className="space-y-0.5">
-                        {[...adoption.features].reverse().map((f, i) => (
-                          <div key={`${f.feature_raw}-${i}`} className="flex items-center justify-between gap-2 py-1 border-b border-slate-50 last:border-0">
-                            <div className="min-w-0 flex-1 flex items-center gap-1.5">
-                              <span className="text-xs text-slate-700 truncate">{f.feature_name}</span>
-                              {f.is_new_30d && <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0 text-[9px] font-semibold text-sky-600 shrink-0">NEW</span>}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">{f.category}</span>
-                              <span className="text-[10px] text-slate-400">{f.first_use_date ?? ""}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-xs text-slate-400 py-1">This client is not using features at this time.</p>
-                  )}
-                  {adoption.signals.missing_categories && (
-                    <p className="mt-3 text-[10px] text-slate-400">Not detected: {adoption.signals.missing_categories}</p>
-                  )}
-                </>
-              )}
-            </div>
+            <div className="space-y-4">
 
-            <div className="mt-4 rounded-xl border border-slate-200 bg-white shadow-sm p-4">
-              <SecurityPostureChecklist accountId={accountId} />
+              {/* Scorecard tile row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-4">
+                <AlertsTile
+                  alerts={accountAlerts as AlertItem[]}
+                  isActive={openTile === "alerts"}
+                  onOpen={() => setOpenTile(openTile === "alerts" ? null : "alerts")}
+                />
+                <EngagementTile
+                  meetings={meetings}
+                  emailActivity={emailActivity}
+                  upcomingMeetings={upcomingMeetingsList}
+                  meetingsLast30d={account?.meetings_last_30d ?? 0}
+                  isActive={openTile === "engagement"}
+                  onOpen={() => setOpenTile(openTile === "engagement" ? null : "engagement")}
+                />
+                <AdoptionTile
+                  adoption={adoption}
+                  isActive={openTile === "adoption"}
+                  onOpen={() => setOpenTile(openTile === "adoption" ? null : "adoption")}
+                />
+                <SecurityTile
+                  summary={securitySummary}
+                  isActive={openTile === "security"}
+                  onOpen={() => setOpenTile(openTile === "security" ? null : "security")}
+                />
+              </div>
+
+              {/* Expanded detail panels */}
+
+              {openTile === "alerts" && (
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+                  <p className="text-sm font-semibold text-slate-700 mb-3 flex items-center gap-2">
+                    <AlertTriangle size={14} className="text-amber-500" />
+                    Alerts
+                    {(accountAlerts as AlertItem[]).length > 0 && (
+                      <span className="inline-flex items-center justify-center h-5 min-w-[20px] rounded-full bg-red-500 text-[10px] font-bold text-white px-1.5">
+                        {(accountAlerts as AlertItem[]).length}
+                      </span>
+                    )}
+                  </p>
+                  {alertsLoading ? (
+                    <p className="text-sm text-slate-400">Loading…</p>
+                  ) : (accountAlerts as AlertItem[]).length === 0 ? (
+                    <p className="text-sm text-slate-400">No active alerts for this account.</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {(accountAlerts as AlertItem[]).map((alert) => (
+                        <AlertRow
+                          key={alert.alert_id}
+                          alert={alert}
+                          showAccountLink={false}
+                          onMarkRead={(id) => markRead.mutate(id)}
+                          onDismiss={(id) => dismissAlert.mutate(id)}
+                          onMute={(id, scope) => muteAlert.mutate({ alertId: id, scope })}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {openTile === "engagement" && (
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                    <CalendarCheck2 size={12} className="text-emerald-500" />Meetings & Email Activity
+                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <CalendarCheck2 size={12} className="text-emerald-500" />Meetings
+                      </p>
+                      <div className="space-y-1.5 mb-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Last 30d</span>
+                          <span className="text-xs font-semibold text-slate-800">{account?.meetings_last_30d}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Upcoming</span>
+                          <span className="text-xs font-semibold text-emerald-600">{upcomingMeetingsList.length}</span>
+                        </div>
+                        {meetings.length > 0 && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500">Last meeting</span>
+                            <span className="text-xs text-slate-600">{formatDate(meetings[0]?.activity_date)}</span>
+                          </div>
+                        )}
+                      </div>
+                      {upcomingMeetingsList.length > 0 && (
+                        <div className="space-y-1 border-t border-slate-100 pt-3">
+                          <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-1.5">Upcoming</p>
+                          {upcomingMeetingsList.slice(0, 4).map((m, i) => (
+                            <div key={m.activity_id ?? i} className="flex items-center justify-between gap-2">
+                              <span className="text-xs text-slate-700 truncate min-w-0">{m.subject ?? "Meeting"}</span>
+                              <span className="text-[11px] text-emerald-600 shrink-0">{formatDate(m.activity_date)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                        <Mail size={12} className="text-sky-400" />Email Activity
+                      </p>
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Last 30d</span>
+                          <span className="text-xs font-semibold text-slate-800">{emailActivity?.emails_last_30d ?? 0}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Outbound</span>
+                          <span className="text-xs text-slate-700">{emailActivity?.emails_outbound_30d ?? 0}</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-slate-500">Inbound</span>
+                          <span className="text-xs text-slate-700">{emailActivity?.emails_inbound_30d ?? 0}</span>
+                        </div>
+                        {emailActivity?.email_trend && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500">Trend</span>
+                            <span className={`text-xs font-medium flex items-center gap-1 ${
+                              emailActivity.email_trend === "increasing" ? "text-emerald-600" :
+                              emailActivity.email_trend === "declining" ? "text-rose-600" : "text-slate-500"
+                            }`}>
+                              {emailActivity.email_trend === "increasing" && <TrendingUp size={11} />}
+                              {emailActivity.email_trend === "declining" && <TrendingDown size={11} />}
+                              {emailActivity.email_trend}
+                            </span>
+                          </div>
+                        )}
+                        {emailActivity?.last_email_date && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500">Last email</span>
+                            <span className="text-xs text-slate-600">{formatDate(emailActivity.last_email_date)}</span>
+                          </div>
+                        )}
+                        {emailActivity?.emails_last_7d != null && (
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-slate-500">Last 7d</span>
+                            <span className="text-xs text-slate-700">{emailActivity.emails_last_7d}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {openTile === "adoption" && (
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+                  <div className="flex items-center gap-1.5 mb-3">
+                    <Cpu size={13} className="text-slate-400" />
+                    <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+                      Platform Adoption{adoption?.signals ? ` (${adoption.signals.signal_count}/8 categories)` : ""}
+                    </p>
+                  </div>
+                  {!adoption?.signals ? (
+                    <p className="text-xs text-slate-400 py-2">This client is not using features at this time.</p>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-4 gap-2 mb-4">
+                        {([
+                          { key: "sig_pipeline", label: "Pipeline" },
+                          { key: "sig_transforms", label: "Transforms" },
+                          { key: "sig_bi", label: "BI" },
+                          { key: "sig_cost", label: "Cost Gov" },
+                          { key: "sig_collab", label: "Collab" },
+                          { key: "sig_obs", label: "Observability" },
+                          { key: "sig_aiml", label: "AI/ML" },
+                          { key: "sig_spcs", label: "SPCS" },
+                        ] as const).map(({ key, label }) => {
+                          const active = (adoption.signals as unknown as Record<string, number>)[key] === 1;
+                          return (
+                            <div key={key} className={`rounded-lg border p-2 text-center ${active ? "border-emerald-200 bg-emerald-50" : "border-slate-100 bg-slate-50 opacity-50"}`}>
+                              <p className={`text-[10px] font-medium leading-tight ${active ? "text-emerald-700" : "text-slate-400"}`}>{label}</p>
+                              <span className={`inline-block mt-1 text-[8px] font-semibold uppercase ${active ? "text-emerald-500" : "text-slate-300"}`}>{active ? "active" : "none"}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {adoption.features.length > 0 ? (
+                        <>
+                          <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Feature History ({adoption.features.length})</p>
+                          <div className="space-y-0.5">
+                            {[...adoption.features].reverse().map((f, i) => (
+                              <div key={`${f.feature_raw}-${i}`} className="flex items-center justify-between gap-2 py-1 border-b border-slate-50 last:border-0">
+                                <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                                  <span className="text-xs text-slate-700 truncate">{f.feature_name}</span>
+                                  {f.is_new_30d && <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-1.5 py-0 text-[9px] font-semibold text-sky-600 shrink-0">NEW</span>}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-[10px] text-slate-400 bg-slate-50 border border-slate-100 rounded px-1.5 py-0.5">{f.category}</span>
+                                  <span className="text-[10px] text-slate-400">{f.first_use_date ?? ""}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-400 py-1">This client is not using features at this time.</p>
+                      )}
+                      {adoption.signals.missing_categories && (
+                        <p className="mt-3 text-[10px] text-slate-400">Not detected: {adoption.signals.missing_categories}</p>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {openTile === "security" && (
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
+                  <SecurityPostureChecklist accountId={accountId} />
+                </div>
+              )}
+
             </div>
-            </>
           )}
         </div>
       </div>

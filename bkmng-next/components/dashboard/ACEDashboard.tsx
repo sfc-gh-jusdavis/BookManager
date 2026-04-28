@@ -3,17 +3,18 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import {
-  Building2, AlertTriangle, TrendingUp, CalendarClock, Zap,
+  AlertTriangle, TrendingUp, CalendarClock, Zap,
   Sparkles, PhoneMissed, TrendingDown, ShieldAlert, CalendarCheck2,
   MessageSquare, ChevronRight, Cpu, CheckCheck, X, Activity, Clock,
-  Mail, CalendarX, Users,
+  Mail, CalendarX, ClipboardList, FileText, Calendar, GanttChart,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { PRIORITY_COLORS, PRIORITY_LABEL } from "@/components/alerts/AlertRow";
 import {
   useAccounts, useUseCases, useGongCalls, useNBA, useSituations,
   useRecentAdoptions, useAlerts, useAlertCount,
   useMarkAlertRead, useDismissAlert,
-  type GongCall, type NBAItem, type FeatureAdoption, type AlertItem, type CompositePattern,
+  type GongCall, type NBAItem, type NBAResponse, type FeatureAdoption, type AlertItem, type CompositePattern,
 } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -25,11 +26,15 @@ type Account = {
   meetings_last_30d: number; upcoming_meetings_5d: number;
   last_meeting_date: string | null; emails_last_30d: number;
   last_email_date: string | null; email_trend: string | null;
+  engagement_start_date?: string | null;
+  rolloff_date?: string | null;
 };
 type UseCase = {
   use_case_id: string; account_id: string; account_name: string;
   use_case_name: string; stage: string; status: string;
   go_live_date: string | null; target_go_live_date: string | null;
+  implementation_start_date: string | null;
+  ps_notes_summary: string | null;
 };
 
 // ─── constants ────────────────────────────────────────────────────────────────
@@ -61,6 +66,8 @@ const SIGNAL_LABELS: Record<string, string> = {
   meeting_momentum: "Meeting Momentum",
   email_silence: "Email Silence",
   email_declining: "Email Declining",
+  security_gap_critical: "Security Gap (Critical)",
+  security_gap_high: "Security Gap (High)",
 };
 
 const SIGNAL_CATEGORY: Record<string, string> = {
@@ -78,9 +85,14 @@ const SIGNAL_CATEGORY: Record<string, string> = {
   upcoming_meeting: "engagement", no_upcoming_meeting: "engagement",
   meeting_momentum: "engagement", email_silence: "engagement",
   email_declining: "engagement",
+  security_gap_critical: "support", security_gap_high: "support",
 };
 
 const MS_PER_DAY = 86_400_000;
+const TERMINAL_STAGE_PREFIXES = ["0 -", "7 - Deployed", "8 -"];
+function isTerminalStage(stage: string) {
+  return TERMINAL_STAGE_PREFIXES.some((p) => stage.startsWith(p));
+}
 
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function parseLocalDate(iso: string): Date {
@@ -137,30 +149,22 @@ function SignalIcon({ type, size = 13 }: { type: string; size?: number }) {
     return <Mail size={size} className={`${base} text-amber-500`} />;
   if (type === "email_declining")
     return <TrendingDown size={size} className={`${base} text-rose-400`} />;
+  if (type === "security_gap_critical")
+    return <ShieldAlert size={size} className={`${base} text-red-600`} />;
+  if (type === "security_gap_high")
+    return <ShieldAlert size={size} className={`${base} text-orange-500`} />;
   return <Zap size={size} className={`${base} text-slate-400`} />;
 }
 
 // ─── priority badge ───────────────────────────────────────────────────────────
 function PriorityBadge({ priority }: { priority: string }) {
-  const cls = priority === "high"
-    ? "bg-red-50 text-red-600 border-red-100"
-    : priority === "medium"
-    ? "bg-amber-50 text-amber-600 border-amber-100"
-    : "bg-slate-50 text-slate-400 border-slate-100";
+  const cls = PRIORITY_COLORS[priority] ?? PRIORITY_COLORS.low;
+  const label = PRIORITY_LABEL[priority] ?? priority;
   return (
     <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[9px] font-medium ${cls}`}>
-      {priority}
+      {label}
     </span>
   );
-}
-
-// ─── status dot ───────────────────────────────────────────────────────────────
-function StatusDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    Active: "bg-emerald-500", "Go Live": "bg-emerald-500",
-    "At Risk": "bg-amber-500", Onboarding: "bg-sky-500", Blocked: "bg-red-500",
-  };
-  return <span className={`inline-block h-2 w-2 rounded-full shrink-0 ${colors[status] ?? "bg-slate-300"}`} />;
 }
 
 // ─── section label ────────────────────────────────────────────────────────────
@@ -254,7 +258,9 @@ export function ACEDashboard() {
   const { data: allAccounts = [] } = useAccounts() as { data: Account[] };
   const { data: allUseCases = [] } = useUseCases() as { data: UseCase[] };
   const { data: allGongCalls = [] } = useGongCalls() as { data: GongCall[] };
-  const { data: nbaItems = [], isLoading: nbaLoading } = useNBA() as { data: NBAItem[]; isLoading: boolean };
+  const { data: nbaResponse, isLoading: nbaLoading } = useNBA() as { data: NBAResponse | undefined; isLoading: boolean };
+  const clientItems = nbaResponse?.client ?? [];
+  const adminItems = nbaResponse?.admin ?? [];
   const { data: situations = [] } = useSituations() as { data: CompositePattern[] };
   const { data: recentAdoptions = [] } = useRecentAdoptions(7) as { data: FeatureAdoption[] };
   const { data: alerts = [] } = useAlerts() as { data: AlertItem[] };
@@ -303,8 +309,8 @@ export function ACEDashboard() {
   }, [allGongCalls, myAccountIds, today]);
 
   const contractEndings = useMemo(
-    () => nbaItems.filter((i) => i.signal_type === "contract_ending"),
-    [nbaItems]
+    () => clientItems.filter((i) => i.signal_type === "contract_ending"),
+    [clientItems]
   );
 
   const upcomingMeetingAccounts = useMemo(
@@ -313,6 +319,26 @@ export function ACEDashboard() {
       .sort((a, b) => (b.upcoming_meetings_5d ?? 0) - (a.upcoming_meetings_5d ?? 0))
       .slice(0, 4),
     [myAccounts]
+  );
+
+  const hygieneUseCases = useMemo(
+    () => myUseCases.filter((uc) => !isTerminalStage(uc.stage)),
+    [myUseCases]
+  );
+
+  const missingPsNotes = useMemo(
+    () => hygieneUseCases.filter((uc) => !uc.ps_notes_summary),
+    [hygieneUseCases]
+  );
+
+  const missingDates = useMemo(
+    () =>
+      hygieneUseCases.filter(
+        (uc) =>
+          (!uc.go_live_date && !uc.target_go_live_date) ||
+          !uc.implementation_start_date
+      ),
+    [hygieneUseCases]
   );
 
   const atRiskCount = myAccounts.filter(
@@ -324,17 +350,18 @@ export function ACEDashboard() {
     return d && d >= "2026-04-01" && d <= "2026-06-30";
   }).length;
 
-  const highCount = nbaItems.filter((i) => i.priority === "high").length;
+  const highCount = clientItems.filter((i) => i.priority === "high").length;
   const unreadCount = alertCount?.count ?? 0;
 
   const brief = useMemo(() => {
-    if (highCount === 0 && unreadCount === 0)
+    if (highCount === 0 && unreadCount === 0 && adminItems.length === 0)
       return "Your book looks healthy today — no urgent items.";
     const parts: string[] = [];
     if (highCount > 0) parts.push(`${highCount} high-priority signal${highCount !== 1 ? "s" : ""}`);
     if (unreadCount > 0) parts.push(`${unreadCount} unread alert${unreadCount !== 1 ? "s" : ""}`);
-    return `${parts.join(" and ")} need${parts.length === 1 && highCount === 1 ? "s" : ""} your attention.`;
-  }, [highCount, unreadCount]);
+    if (adminItems.length > 0) parts.push(`${adminItems.length} admin task${adminItems.length !== 1 ? "s" : ""}`);
+    return `${parts.join(", ")} need${parts.length === 1 && highCount === 1 ? "s" : ""} your attention.`;
+  }, [highCount, unreadCount, adminItems.length]);
 
   const dayStr = useMemo(
     () => today.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
@@ -347,13 +374,13 @@ export function ACEDashboard() {
   }, []);
 
   const filterCounts: Record<FocusFilter, number> = useMemo(() => ({
-    all: nbaItems.length,
-    high: nbaItems.filter((i) => i.priority === "high").length,
-    support: nbaItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "support").length,
-    engagement: nbaItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "engagement").length,
-    consumption: nbaItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "consumption").length,
-    expansion: nbaItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "expansion").length,
-  }), [nbaItems]);
+    all: clientItems.length,
+    high: clientItems.filter((i) => i.priority === "high").length,
+    support: clientItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "support").length,
+    engagement: clientItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "engagement").length,
+    consumption: clientItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "consumption").length,
+    expansion: clientItems.filter((i) => SIGNAL_CATEGORY[i.signal_type] === "expansion").length,
+  }), [clientItems]);
 
   const FILTER_LABELS: Record<FocusFilter, string> = {
     all: "All",
@@ -370,7 +397,7 @@ export function ACEDashboard() {
 
   const focusItems = useMemo(() => {
     const seen = new Set<string>();
-    return nbaItems
+    return clientItems
       .filter((item) => {
         if (seen.has(item.id)) return false;
         seen.add(item.id);
@@ -387,7 +414,7 @@ export function ACEDashboard() {
         const rank = { high: 0, medium: 1, low: 2 };
         return rank[a.priority] - rank[b.priority];
       });
-  }, [nbaItems, focusFilter, alertBySignalId]);
+  }, [clientItems, focusFilter, alertBySignalId]);
 
   const nextGoLiveDate = upcomingGoLives[0]
     ? (upcomingGoLives[0].go_live_date ?? upcomingGoLives[0].target_go_live_date)
@@ -424,12 +451,14 @@ export function ACEDashboard() {
 
         <Card>
           <CardContent className="pt-4 pb-4">
-            <p className={`text-2xl font-bold ${nbaItems.length > 0 ? "text-violet-600" : "text-slate-400"}`}>
-              {nbaItems.length}
+            <p className={`text-2xl font-bold ${clientItems.length > 0 ? "text-violet-600" : "text-slate-400"}`}>
+              {clientItems.length}
             </p>
             <p className="text-xs text-slate-500 mt-0.5">Active Signals</p>
             {highCount > 0
               ? <p className="text-[10px] text-red-500 font-medium mt-1">{highCount} high priority</p>
+              : adminItems.length > 0
+              ? <p className="text-[10px] text-slate-400 mt-1">{adminItems.length} admin tasks</p>
               : <p className="text-[10px] text-slate-400 mt-1">No urgent items</p>
             }
           </CardContent>
@@ -571,6 +600,44 @@ export function ACEDashboard() {
                   />
                 );
               })}
+            </div>
+          )}
+
+          {/* ── Admin Tasks ──────────────────────────────────────────────────── */}
+          {adminItems.length > 0 && (
+            <div className="mt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Admin Tasks</span>
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{adminItems.length}</span>
+              </div>
+              <div className="space-y-1.5">
+                {adminItems.map((item) => {
+                  const label = SIGNAL_LABELS[item.signal_type] ?? item.signal_type;
+                  return (
+                    <div key={item.id} className="border border-slate-100 border-l-2 border-l-slate-200 rounded-lg bg-white px-3 py-2 hover:bg-slate-50/80 transition-colors">
+                      <div className="flex items-center gap-2">
+                        <SignalIcon type={item.signal_type} size={11} />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <Link href={`/accounts/${item.account_id}`}
+                              className="text-[11px] font-medium text-slate-700 hover:text-sky-700 truncate">
+                              {item.account_name}
+                            </Link>
+                            <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 rounded">{label}</span>
+                          </div>
+                          {item.summary && (
+                            <p className="text-[10px] text-slate-400 leading-snug truncate mt-0.5">{item.summary}</p>
+                          )}
+                        </div>
+                        <Link href={`/accounts/${item.account_id}`}
+                          className="text-[10px] text-slate-400 hover:text-slate-600 shrink-0">
+                          <ChevronRight size={11} />
+                        </Link>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           )}
         </div>
@@ -721,32 +788,181 @@ export function ACEDashboard() {
             </Card>
           )}
 
-          {/* My Book */}
+          {/* Use Case Hygiene */}
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-xs font-semibold text-slate-700 flex items-center justify-between">
-                <div className="flex items-center gap-1.5">
-                  <Building2 size={13} className="text-slate-400" />
-                  My Book
-                </div>
-                <Link href="/accounts" className="text-[10px] text-sky-600 hover:underline font-normal">
-                  View all →
-                </Link>
+              <CardTitle className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                <ClipboardList size={13} className="text-amber-500" />
+                Use Case Hygiene
+                {(missingPsNotes.length + missingDates.length) > 0 ? (
+                  <span className="ml-auto text-[10px] font-normal text-amber-600 bg-amber-50 border border-amber-100 px-1.5 py-0.5 rounded-full">
+                    {missingPsNotes.length + missingDates.length} items
+                  </span>
+                ) : (
+                  <span className="ml-auto text-[10px] font-normal text-emerald-600 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                    all clear
+                  </span>
+                )}
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-0.5">
-                {myAccounts.map((acc) => (
-                  <Link key={acc.account_id} href={`/accounts/${acc.account_id}`}
-                    className="flex items-center gap-2 py-1 hover:bg-slate-50 -mx-1 px-1 rounded transition-colors">
-                    <StatusDot status={acc.status} />
-                    <span className="text-[11px] text-slate-700 truncate flex-1">{acc.account_name}</span>
-                    <span className="text-[10px] text-slate-400 shrink-0">{acc.engagement_status}</span>
-                  </Link>
-                ))}
-              </div>
+            <CardContent className="space-y-3">
+              {missingPsNotes.length === 0 && missingDates.length === 0 && (
+                <p className="text-xs text-slate-400 py-1">No hygiene issues — all active use cases have PS notes and dates.</p>
+              )}
+              {missingPsNotes.length > 0 && (
+                  <div>
+                    <SectionLabel>Missing PS Notes ({missingPsNotes.length})</SectionLabel>
+                    <div className="space-y-1">
+                      {missingPsNotes.slice(0, 4).map((uc) => (
+                        <Link
+                          key={uc.use_case_id}
+                          href={`/accounts/${uc.account_id}`}
+                          className="flex items-start gap-1.5 hover:bg-slate-50 -mx-1 px-1 rounded py-0.5 transition-colors"
+                        >
+                          <FileText size={10} className="text-amber-400 shrink-0 mt-0.5" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-[11px] font-medium text-slate-700 truncate">{uc.use_case_name}</p>
+                            <p className="text-[10px] text-sky-600 truncate">{uc.account_name}</p>
+                          </div>
+                        </Link>
+                      ))}
+                      {missingPsNotes.length > 4 && (
+                        <p className="text-[10px] text-slate-400 pl-4">+{missingPsNotes.length - 4} more</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {missingDates.length > 0 && (
+                  <div>
+                    <SectionLabel>Missing Dates ({missingDates.length})</SectionLabel>
+                    <div className="space-y-1">
+                      {missingDates.slice(0, 4).map((uc) => {
+                        const noGoLive = !uc.go_live_date && !uc.target_go_live_date;
+                        const noImpl = !uc.implementation_start_date;
+                        const tag = noGoLive && noImpl ? "no dates" : noGoLive ? "no go-live" : "no impl start";
+                        return (
+                          <Link
+                            key={uc.use_case_id}
+                            href={`/accounts/${uc.account_id}`}
+                            className="flex items-start gap-1.5 hover:bg-slate-50 -mx-1 px-1 rounded py-0.5 transition-colors"
+                          >
+                            <Calendar size={10} className="text-amber-400 shrink-0 mt-0.5" />
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[11px] font-medium text-slate-700 truncate">{uc.use_case_name}</p>
+                              <p className="text-[10px] text-sky-600 truncate">{uc.account_name}</p>
+                            </div>
+                            <span className="text-[9px] text-amber-600 bg-amber-50 border border-amber-100 px-1 py-0.5 rounded shrink-0 ml-1">{tag}</span>
+                          </Link>
+                        );
+                      })}
+                      {missingDates.length > 4 && (
+                        <p className="text-[10px] text-slate-400 pl-4">+{missingDates.length - 4} more</p>
+                      )}
+                    </div>
+                  </div>
+                )}
             </CardContent>
           </Card>
+
+          {/* Engagement Timeline mini */}
+          {(() => {
+            const today = new Date();
+            today.setHours(12, 0, 0, 0);
+            const wStart = new Date(today);
+            wStart.setDate(1);
+            wStart.setMonth(wStart.getMonth() - 1);
+            const wEnd = new Date(wStart);
+            wEnd.setMonth(wEnd.getMonth() + 6);
+            const wMs = wStart.getTime();
+            const spanMs = wEnd.getTime() - wMs;
+            const todayPct = ((today.getTime() - wMs) / spanMs) * 100;
+            const ENGAGEMENT_COLORS: Record<string, string> = {
+              "Low": "bg-sky-400", "Normal": "bg-emerald-500", "High": "bg-violet-500",
+            };
+            const datedAccounts = myAccounts
+              .filter((a) => a.engagement_start_date)
+              .sort((a, b) => {
+                const ad = new Date(a.engagement_start_date!.slice(0, 10) + "T12:00:00").getTime();
+                const bd = new Date(b.engagement_start_date!.slice(0, 10) + "T12:00:00").getTime();
+                return ad - bd;
+              })
+              .slice(0, 8);
+            return (
+              <Card>
+                <CardHeader className="pb-1">
+                  <CardTitle className="text-xs font-semibold text-slate-700 flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      <GanttChart size={13} className="text-slate-400" />
+                      Engagement Timeline
+                    </div>
+                    <Link href="/timeline" className="text-[10px] text-sky-600 hover:underline font-normal">
+                      Full view →
+                    </Link>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-1">
+                  {datedAccounts.length === 0 ? (
+                    <div className="text-[11px] text-slate-400 py-2 text-center">
+                      No engagement dates set yet.{" "}
+                      <Link href="/accounts" className="text-sky-600 hover:underline">Add dates on account detail.</Link>
+                    </div>
+                  ) : (
+                    <div className="space-y-0">
+                      <div className="relative h-4 mb-1">
+                        {todayPct >= 0 && todayPct <= 100 && (
+                          <div className="absolute top-0 bottom-0 w-px bg-sky-300" style={{ left: `${todayPct}%` }}>
+                            <span className="absolute top-0 left-1 text-[9px] text-sky-500 whitespace-nowrap">Today</span>
+                          </div>
+                        )}
+                      </div>
+                      {datedAccounts.map((acc) => {
+                        const sTime = new Date(acc.engagement_start_date!.slice(0, 10) + "T12:00:00").getTime();
+                        const eTime = acc.rolloff_date
+                          ? new Date(acc.rolloff_date.slice(0, 10) + "T12:00:00").getTime()
+                          : sTime + 90 * 86400000;
+                        const cStart = Math.max(sTime, wMs);
+                        const cEnd   = Math.min(eTime, wEnd.getTime());
+                        if (cEnd <= wMs || cStart >= wEnd.getTime()) return null;
+                        const leftPct  = ((cStart - wMs) / spanMs) * 100;
+                        const widthPct = ((cEnd - cStart) / spanMs) * 100;
+                        const barColor = acc.status.toLowerCase() === "not started"
+                          ? "bg-transparent border border-dashed border-slate-300"
+                          : acc.status.toLowerCase() === "paused" ? "bg-amber-400"
+                          : acc.status.toLowerCase() === "complete" ? "bg-slate-300"
+                          : (ENGAGEMENT_COLORS[acc.engagement_status] ?? "bg-slate-400");
+                        return (
+                          <Link key={acc.account_id} href={`/accounts/${acc.account_id}`}
+                            className="flex items-center gap-1.5 py-0.5 hover:bg-slate-50 -mx-1 px-1 rounded group transition-colors">
+                            <span className="text-[10px] text-slate-600 truncate w-20 shrink-0 group-hover:text-sky-600">{acc.account_name}</span>
+                            <div className="flex-1 relative h-3 bg-slate-50 rounded overflow-hidden">
+                              {todayPct >= 0 && todayPct <= 100 && (
+                                <div className="absolute top-0 bottom-0 w-px bg-sky-200" style={{ left: `${todayPct}%` }} />
+                              )}
+                              <div
+                                className={`absolute top-0 bottom-0 rounded ${barColor}`}
+                                style={{ left: `${Math.max(0, leftPct).toFixed(1)}%`, width: `${Math.max(widthPct, 1).toFixed(1)}%` }}
+                              />
+                            </div>
+                          </Link>
+                        );
+                      })}
+                      {myAccounts.filter((a) => a.engagement_start_date).length > 8 && (
+                        <p className="text-[10px] text-slate-400 pt-0.5">
+                          +{myAccounts.filter((a) => a.engagement_start_date).length - 8} more on{" "}
+                          <Link href="/timeline" className="text-sky-600 hover:underline">full timeline</Link>
+                        </p>
+                      )}
+                      {myAccounts.filter((a) => !a.engagement_start_date).length > 0 && (
+                        <p className="text-[10px] text-slate-400 pt-0.5">
+                          {myAccounts.filter((a) => !a.engagement_start_date).length} accounts with no dates set
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })()}
 
         </div>
       </div>

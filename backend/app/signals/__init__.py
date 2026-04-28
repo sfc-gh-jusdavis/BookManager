@@ -4,6 +4,7 @@ from app.signals.registry import SignalRegistry
 from app.signals.providers.core import CoreProvider
 from app.signals.providers.support import SupportProvider
 from app.signals.providers.user_context import UserContextProvider
+from app.signals.providers.composite import CompositePatternProvider
 
 _registry: SignalRegistry | None = None
 
@@ -20,5 +21,4 @@ def _register_all_providers(registry: SignalRegistry) -> None:
     registry.register(CoreProvider())
     registry.register(SupportProvider())
     registry.register(UserContextProvider())
-    # Future: registry.register(SetSailProvider())
-    # Future: registry.register(GongProvider())
+    registry.register(CompositePatternProvider())

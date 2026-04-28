@@ -66,6 +66,7 @@ class SupportProvider(SignalProvider):
                     metadata=row.get("METADATA") or {},
                     alert_eligible=bool(row.get("ALERT_ELIGIBLE", False)),
                     created_at=row.get("CREATED_AT"),
+                    lane="client",
                 )
             )
         return results

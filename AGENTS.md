@@ -105,14 +105,13 @@ All tasks live in `TEMP.JUSDAVIS`. Warehouse: `SE_XS_WH`.
 | TASK_REFRESH_BKMNG_USE_CASES | `5 */4 * * *` | inline | — |
 | TASK_PARSE_BKMNG_USE_CASE_NOTES | after predecessor | SP_PARSE_BKMNG_USE_CASE_NOTES | USE_CASES |
 | TASK_COMPUTE_USE_CASE_BREAKDOWNS | after predecessor | SP_COMPUTE_USE_CASE_BREAKDOWNS | USE_CASES |
-| TASK_REFRESH_BKMNG_GONG_CALLS | `0 */2 * * *` | inline | — |
+| TASK_REFRESH_BKMNG_UNIFIED_MEETINGS | `0 */2 * * *` | SP_REFRESH_BKMNG_UNIFIED_MEETINGS | — |
 | TASK_REFRESH_BKMNG_TMRS | `30 * * * *` | inline | — |
 | TASK_REFRESH_BKMNG_SUPPORT_TICKETS | `45 * * * *` | SP_REFRESH_BKMNG_SUPPORT_TICKETS | — |
 | TASK_COMPUTE_SUPPORT_SIGNALS | `50 * * * *` | SP_COMPUTE_SUPPORT_SIGNALS | — |
 | TASK_REFRESH_BKMNG_A360_CONTRACT | `0 4 * * *` | SP_REFRESH_BKMNG_A360_CONTRACT | — |
 | TASK_REFRESH_BKMNG_A360_CONSUMPTION | `15 4 * * *` | SP_REFRESH_BKMNG_A360_CONSUMPTION | — |
 | TASK_REFRESH_BKMNG_A360_PRODUCT_ADOPTION | `30 4 * * *` | SP_REFRESH_BKMNG_A360_PRODUCT_ADOPTION | — |
-| TASK_REFRESH_BKMNG_MEETING_ACTIVITY | `0 3 * * *` | SP_REFRESH_BKMNG_MEETING_ACTIVITY | — |
 | TASK_REFRESH_BKMNG_EMAIL_ACTIVITY | `0 2 * * *` | SP_REFRESH_BKMNG_EMAIL_ACTIVITY | — |
 | TASK_REFRESH_BKMNG_ONT_INTERACTIONS | `15 */2 * * *` | SP_REFRESH_BKMNG_ONT_INTERACTIONS | — |
 | TASK_REFRESH_BKMNG_ONT_ACCOUNT_TOPICS | `20 */2 * * *` | SP_REFRESH_BKMNG_ONT_ACCOUNT_TOPICS | — |
@@ -126,6 +125,7 @@ All tasks live in `TEMP.JUSDAVIS`. Warehouse: `SE_XS_WH`.
 | TASK_REFRESH_BKMNG_USER_ALERTS | after predecessor | SP_REFRESH_BKMNG_USER_ALERTS | ONT_ACCOUNT_SIGNALS |
 | TASK_COMPUTE_AI_ASSESSMENTS | `0 6 * * *` | SP_COMPUTE_AI_ASSESSMENTS | — |
 | TASK_COMPUTE_ACCOUNT_BRIEFINGS | `0 6 * * *` | SP_COMPUTE_ACCOUNT_BRIEFINGS | — |
+| TASK_COMPUTE_MEETING_PREPS | `0 7 * * *` | SP_COMPUTE_MEETING_PREPS | after ACCOUNT_BRIEFINGS |
 | TASK_CHECK_MEETING_REMINDERS | `0 * * * *` | SP_CHECK_MEETING_REMINDERS | — |
 | TASK_CHECK_STALE_USE_CASES | `0 8 * * *` | SP_CHECK_STALE_USE_CASES | — |
 
@@ -165,7 +165,7 @@ SPCS containers are network-isolated. The service has an External Access Integra
 - Remote: `https://github.com/sfc-gh-jusdavis/BookManager` (private)
 - Branch strategy: trunk-based, `main` is always deployable
 - Git config: `redacted@example.com` / `Justin Davis`
-- Plans archive: `docs/plans/` (48 historical design docs from Playground era)
+- Archived artifacts: `_archive/` — old `frontend/` (Vite), old `sql/`, `snowflake/analytics/`, `snowflake/views/`, old `bkmng-spec.yaml`, `nginx-spcs.conf`, and `docs/` plans live here. **Do not read or modify files under `_archive/`** — they are preserved for reference only and are excluded from Docker builds.
 
 ## Extended Context
 

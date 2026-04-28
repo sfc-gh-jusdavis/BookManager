@@ -64,7 +64,9 @@ BEGIN
         ''no_interaction_7d-'' || a.ACCOUNT_ID,
         a.ACCOUNT_ID, a.ACCOUNT_NAME, ''no_interaction_7d'', ''medium'',
         ''No call at '' || a.ACCOUNT_NAME || '' in 7+ days'',
-        ''Last interaction: '' || COALESCE(a.LAST_EXTERNAL_INTERACTION_DATE::VARCHAR, ''never'') || '' ('' || COALESCE(a.DAYS_SINCE_LAST_INTERACTION::VARCHAR, ''N/A'') || ''d ago). Total calls 90d: '' || COALESCE(a.TOTAL_GONG_CALLS_90D::VARCHAR, ''0'') || ''. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0''),
+        ''Last interaction: '' || COALESCE(a.LAST_EXTERNAL_INTERACTION_DATE::VARCHAR, ''never'') || '' ('' || COALESCE(a.DAYS_SINCE_LAST_INTERACTION::VARCHAR, ''N/A'') || ''d ago). Total calls 90d: '' || COALESCE(a.TOTAL_GONG_CALLS_90D::VARCHAR, ''0'') || ''. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0'')
+            || CASE WHEN a.TOP_COMPETITORS IS NOT NULL THEN ''. Competitors: '' || a.TOP_COMPETITORS ELSE '''' END
+            || CASE WHEN a.CHAMPION_DAYS_SINCE_CALL IS NOT NULL THEN ''. Champion last: '' || a.CHAMPION_DAYS_SINCE_CALL::VARCHAR || ''d ago'' ELSE '''' END,
         ''account'', a.ACCOUNT_ID, CURRENT_TIMESTAMP()
     FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
     WHERE a.DAYS_SINCE_LAST_INTERACTION BETWEEN 7 AND 13
@@ -77,7 +79,9 @@ BEGIN
         ''no_interaction_14d-'' || a.ACCOUNT_ID,
         a.ACCOUNT_ID, a.ACCOUNT_NAME, ''no_interaction_14d'', ''high'',
         ''No call at '' || a.ACCOUNT_NAME || '' in '' || COALESCE(a.DAYS_SINCE_LAST_INTERACTION::VARCHAR, ''14+'') || '' days'',
-        ''Last interaction: '' || COALESCE(a.LAST_EXTERNAL_INTERACTION_DATE::VARCHAR, ''never'') || ''. Momentum: '' || COALESCE(a.MOMENTUM, ''unknown'') || ''. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0'') || ''. Impl: '' || COALESCE(a.IMPL_USE_CASE_COUNT::VARCHAR, ''0''),
+        ''Last interaction: '' || COALESCE(a.LAST_EXTERNAL_INTERACTION_DATE::VARCHAR, ''never'') || ''. Momentum: '' || COALESCE(a.MOMENTUM, ''unknown'') || ''. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0'') || ''. Impl: '' || COALESCE(a.IMPL_USE_CASE_COUNT::VARCHAR, ''0'')
+            || CASE WHEN a.TOP_COMPETITORS IS NOT NULL THEN ''. Competitors: '' || a.TOP_COMPETITORS ELSE '''' END
+            || CASE WHEN a.CHAMPION_DAYS_SINCE_CALL IS NOT NULL THEN ''. Champion last: '' || a.CHAMPION_DAYS_SINCE_CALL::VARCHAR || ''d ago'' ELSE '''' END,
         ''account'', a.ACCOUNT_ID, CURRENT_TIMESTAMP()
     FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
     WHERE a.DAYS_SINCE_LAST_INTERACTION >= 14
@@ -119,16 +123,31 @@ BEGIN
         ''consumption_dip-'' || a.ACCOUNT_ID,
         a.ACCOUNT_ID, a.ACCOUNT_NAME, ''consumption_dip'', ''medium'',
         a.ACCOUNT_NAME || '' consumption down '' || ABS(ROUND(a.WOW_PCT_CHANGE, 0))::VARCHAR || ''% week-over-week'',
-        ''WoW change: '' || ROUND(a.WOW_PCT_CHANGE, 1)::VARCHAR || ''%. MoM: '' || COALESCE(ROUND(a.MOM_PCT_CHANGE, 1)::VARCHAR, ''N/A'') || ''%. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0'') || ''. Rev last week: $'' || ROUND(c.REV_LAST_WEEK, 0)::VARCHAR,
+        ''WoW change: '' || ROUND(a.WOW_PCT_CHANGE, 1)::VARCHAR || ''%. MoM: '' || COALESCE(ROUND(a.MOM_PCT_CHANGE, 1)::VARCHAR, ''N/A'') || ''%. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0'') || ''. Rev last week: $'' || ROUND(c.REV_LAST_WEEK, 0)::VARCHAR
+            || CASE WHEN a.TOP_COMPETITORS IS NOT NULL THEN ''. Competitors: '' || a.TOP_COMPETITORS ELSE '''' END,
         ''account'', a.ACCOUNT_ID, CURRENT_TIMESTAMP()
     FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
     JOIN TEMP.JUSDAVIS.BKMNG_A360_CONSUMPTION c ON c.ACCOUNT_ID = a.ACCOUNT_ID
     WHERE a.WOW_PCT_CHANGE <= -20
       AND c.REV_LAST_WEEK >= 350;
 
-    /* PAUSED: champion_silent */
     /* PAUSED: stage_stalled */
     /* PAUSED: competitor_mentioned */
+
+    -- champion_silent: now enabled with real CHAMPION_DAYS_SINCE_CALL from ONT_ACCOUNTS
+    INSERT INTO TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+        (SIGNAL_ID, ACCOUNT_ID, ACCOUNT_NAME, SIGNAL_TYPE, PRIORITY, SIGNAL_TEXT, CONTEXT, ENTITY_TYPE, ENTITY_ID, CREATED_AT)
+    SELECT
+        ''champion_silent-'' || a.ACCOUNT_ID,
+        a.ACCOUNT_ID, a.ACCOUNT_NAME, ''champion_silent'', ''medium'',
+        a.ACCOUNT_NAME || '' champion not contacted in '' || a.CHAMPION_DAYS_SINCE_CALL::VARCHAR || '' days'',
+        ''Champion(s): '' || a.CHAMPION_COUNT::VARCHAR || ''. Last Gong call: '' || COALESCE(a.CHAMPION_LAST_GONG_DATE::VARCHAR, ''never'') || ''. Days since contact: '' || a.CHAMPION_DAYS_SINCE_CALL::VARCHAR || ''. Momentum: '' || COALESCE(a.MOMENTUM, ''unknown'') || ''. Active use cases: '' || COALESCE(a.ACTIVE_USE_CASE_COUNT::VARCHAR, ''0''),
+        ''account'', a.ACCOUNT_ID, CURRENT_TIMESTAMP()
+    FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
+    WHERE a.CHAMPION_COUNT > 0
+      AND a.CHAMPION_DAYS_SINCE_CALL > 30
+      AND a.ENGAGEMENT_STATUS NOT IN (''Churned'');
+
 
     -- capacity_warning
     INSERT INTO TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
@@ -258,11 +277,11 @@ BEGIN
         ''upcoming_meeting-'' || m.ACCOUNT_ID,
         m.ACCOUNT_ID, m.ACCOUNT_NAME, ''upcoming_meeting'', ''low'',
         m.ACCOUNT_NAME || '' has '' || COUNT(*)::VARCHAR || '' meeting(s) in the next 14 days'',
-        ''Next meeting: '' || MIN(m.SUBJECT),
+        ''Next meeting: '' || MIN(m.TITLE),
         ''account'', m.ACCOUNT_ID, CURRENT_TIMESTAMP()
-    FROM TEMP.JUSDAVIS.BKMNG_MEETING_ACTIVITY m
+    FROM TEMP.JUSDAVIS.BKMNG_UNIFIED_MEETINGS m
     WHERE m.IS_UPCOMING = TRUE
-      AND m.ACTIVITY_DATE < DATEADD(''day'', 14, CURRENT_DATE())
+      AND m.MEETING_START < DATEADD(''day'', 14, CURRENT_DATE())
     GROUP BY m.ACCOUNT_ID, m.ACCOUNT_NAME;
 
     -- no_upcoming_meeting
@@ -276,17 +295,17 @@ BEGIN
         ''account'', a.ACCOUNT_ID, CURRENT_TIMESTAMP()
     FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a
     LEFT JOIN (
-        SELECT ACCOUNT_ID, MAX(ACTIVITY_DATE) AS LAST_MEETING_DATE
-        FROM TEMP.JUSDAVIS.BKMNG_MEETING_ACTIVITY
+        SELECT ACCOUNT_ID, MAX(MEETING_START) AS LAST_MEETING_DATE
+        FROM TEMP.JUSDAVIS.BKMNG_UNIFIED_MEETINGS
         WHERE IS_UPCOMING = FALSE
         GROUP BY ACCOUNT_ID
     ) past ON past.ACCOUNT_ID = a.ACCOUNT_ID
     WHERE a.ENGAGEMENT_STATUS NOT IN (''Churned'', ''Renewal'')
       AND a.STATUS NOT IN (''Churned'')
       AND NOT EXISTS (
-          SELECT 1 FROM TEMP.JUSDAVIS.BKMNG_MEETING_ACTIVITY um
+          SELECT 1 FROM TEMP.JUSDAVIS.BKMNG_UNIFIED_MEETINGS um
           WHERE um.ACCOUNT_ID = a.ACCOUNT_ID AND um.IS_UPCOMING = TRUE
-            AND um.ACTIVITY_DATE < DATEADD(''day'', 14, CURRENT_DATE())
+            AND um.MEETING_START < DATEADD(''day'', 14, CURRENT_DATE())
       )
       AND (past.LAST_MEETING_DATE IS NULL
            OR past.LAST_MEETING_DATE < DATEADD(''day'', -14, CURRENT_DATE()));
@@ -300,9 +319,9 @@ BEGIN
         m.ACCOUNT_NAME || '' has had '' || COUNT(*)::VARCHAR || '' meetings in the last 14 days'',
         ''Meetings in last 14d: '' || COUNT(*)::VARCHAR,
         ''account'', m.ACCOUNT_ID, CURRENT_TIMESTAMP()
-    FROM TEMP.JUSDAVIS.BKMNG_MEETING_ACTIVITY m
+    FROM TEMP.JUSDAVIS.BKMNG_UNIFIED_MEETINGS m
     WHERE m.IS_UPCOMING = FALSE
-      AND m.ACTIVITY_DATE >= DATEADD(''day'', -14, CURRENT_DATE())
+      AND m.MEETING_START >= DATEADD(''day'', -14, CURRENT_DATE())
     GROUP BY m.ACCOUNT_ID, m.ACCOUNT_NAME
     HAVING COUNT(*) >= 3;
 
@@ -341,9 +360,12 @@ BEGIN
         c.ACCOUNT_ID, c.ACCOUNT_NAME, ''contract_ending'',
         ''high'',
         c.ACCOUNT_NAME || '' contract ends '' || c.CONTRACT_END_DATE::VARCHAR || '' ('' || c.DAYS_UNTIL_CONTRACT_END || '' days)'',
-        ''ACV: $'' || ROUND(c.NET_ACV, 0)::VARCHAR || '' | Deal type: '' || COALESCE(c.DEAL_TYPE, ''Unknown'') || '' | 90d revenue: $'' || ROUND(COALESCE(c.REV_90D, 0), 0)::VARCHAR || '' | Renewal: '' || c.IS_RENEWAL::VARCHAR,
+        ''ACV: $'' || ROUND(c.NET_ACV, 0)::VARCHAR || '' | Deal type: '' || COALESCE(c.DEAL_TYPE, ''Unknown'') || '' | 90d revenue: $'' || ROUND(COALESCE(c.REV_90D, 0), 0)::VARCHAR || '' | Renewal: '' || c.IS_RENEWAL::VARCHAR
+            || CASE WHEN a.AI_PRIORITY_TIER IS NOT NULL THEN '' | AI tier: '' || a.AI_PRIORITY_TIER ELSE '''' END
+            || '' | Open opps: '' || COALESCE(a.OPEN_OPP_COUNT::VARCHAR, ''0''),
         ''account'', c.ACCOUNT_ID, CURRENT_TIMESTAMP()
     FROM TEMP.JUSDAVIS.BKMNG_A360_CONTRACT c
+    LEFT JOIN TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS a ON a.ACCOUNT_ID = c.ACCOUNT_ID
     WHERE c.DAYS_UNTIL_CONTRACT_END <= 60
       AND c.DAYS_UNTIL_CONTRACT_END > 0
       AND c.CONTRACT_END_DATE IS NOT NULL;
@@ -379,7 +401,7 @@ BEGIN
         END,
         ALERT_ELIGIBLE = CASE
             WHEN PRIORITY = ''high'' THEN TRUE
-            WHEN SIGNAL_TYPE IN (''open_tmr'', ''new_feature_adoption'', ''no_upcoming_meeting'', ''email_silence'', ''use_case_no_go_live'', ''use_case_no_impl_start'', ''use_case_stale_notes'') THEN TRUE
+            WHEN SIGNAL_TYPE IN (''open_tmr'', ''new_feature_adoption'', ''no_upcoming_meeting'', ''email_silence'', ''use_case_no_go_live'', ''use_case_no_impl_start'', ''use_case_stale_notes'', ''champion_silent'') THEN TRUE
             ELSE FALSE
         END
     WHERE SOURCE IS NULL;

@@ -14,6 +14,7 @@ import snowflake.connector
 from snowflake.connector import DictCursor
 
 from app.db.connection import get_snowflake_connection
+from app.cache import cache_get, cache_set, cache_invalidate_prefix
 from app.models.account import Account, UseCase, PSNote, AccountResource, MeetingActivity, EmailActivity, ManualMeeting
 from app.models.credit import CreditConsumption, AccountFeatureUsage, AccountRevenueSummary
 from app.models.gong import GongCall
@@ -53,6 +54,8 @@ def _split_gong_bullets(raw: str) -> list[str]:
 def _d(val) -> Optional[date]:
     if val is None:
         return None
+    if isinstance(val, datetime):
+        return val.date()
     if isinstance(val, date):
         return val
     return val.date() if hasattr(val, "date") else None
@@ -79,6 +82,10 @@ class SnowflakeDataService:
         ace_filter: Optional[str] = None,
         acem_filter: Optional[str] = None,
     ) -> list[Account]:
+        cache_key = f"list_accounts:{ace_filter}:{acem_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         sql = """
             SELECT
@@ -108,12 +115,15 @@ class SnowflakeDataService:
                 COALESCE(s.NO_RECORDING, FALSE) AS NO_RECORDING,
                 a.LEAD_SE_EMAIL,
                 a.AE_EMAIL,
+                a.AE_NAME,
+                s.ENGAGEMENT_START_DATE,
+                s.ROLLOFF_DATE,
                 COUNT(uc.USE_CASE_ID) AS USE_CASE_COUNT
             FROM BKMNG_ONT_ACCOUNTS a
             LEFT JOIN BKMNG_USE_CASES uc ON uc.ACCOUNT_ID = a.ACCOUNT_ID
             LEFT JOIN BKMNG_ACCOUNT_SETTINGS s ON s.ACCOUNT_ID = a.ACCOUNT_ID
             {where}
-            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29
             ORDER BY a.ACCOUNT_NAME
         """
         if ace_filter:
@@ -125,9 +135,31 @@ class SnowflakeDataService:
             )
         else:
             cur.execute(sql.format(where=""))
-        return [_row_to_account(r) for r in cur.fetchall()]
+        result = [_row_to_account(r) for r in cur.fetchall()]
+        cache_set(cache_key, result, ttl=300)
+        return result
+
+    def get_account_name(self, account_id: str) -> Optional[str]:
+        cache_key = f"account_name:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+        cur = self._cursor()
+        cur.execute(
+            "SELECT ACCOUNT_NAME FROM BKMNG_ONT_ACCOUNTS WHERE ACCOUNT_ID = %s",
+            (account_id,),
+        )
+        row = cur.fetchone()
+        name = (row or {}).get("ACCOUNT_NAME") if row else None
+        if name:
+            cache_set(cache_key, name, ttl=3600)
+        return name
 
     def get_account(self, account_id: str, ace_filter: Optional[str] = None) -> Optional[Account]:
+        cache_key = f"account:{account_id}:{ace_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         sql = """
             SELECT
@@ -157,13 +189,16 @@ class SnowflakeDataService:
                 COALESCE(s.NO_RECORDING, FALSE) AS NO_RECORDING,
                 a.LEAD_SE_EMAIL,
                 a.AE_EMAIL,
+                a.AE_NAME,
+                s.ENGAGEMENT_START_DATE,
+                s.ROLLOFF_DATE,
                 COUNT(uc.USE_CASE_ID) AS USE_CASE_COUNT
             FROM BKMNG_ONT_ACCOUNTS a
             LEFT JOIN BKMNG_USE_CASES uc ON uc.ACCOUNT_ID = a.ACCOUNT_ID
             LEFT JOIN BKMNG_ACCOUNT_SETTINGS s ON s.ACCOUNT_ID = a.ACCOUNT_ID
             WHERE a.ACCOUNT_ID = %s
             {ace_clause}
-            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29
         """
         if ace_filter:
             cur.execute(
@@ -173,13 +208,20 @@ class SnowflakeDataService:
         else:
             cur.execute(sql.format(ace_clause=""), (account_id,))
         row = cur.fetchone()
-        return _row_to_account(row) if row else None
+        result = _row_to_account(row) if row else None
+        if result is not None:
+            cache_set(cache_key, result, ttl=180)
+        return result
 
     def list_account_signal_counts(
         self,
         ace_filter: Optional[str] = None,
         acem_filter: Optional[str] = None,
     ) -> dict:
+        cache_key = f"signal_counts:{ace_filter}:{acem_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         where_parts = ["1=1"]
         params: list = []
@@ -215,6 +257,7 @@ class SnowflakeDataService:
                 "low":    int(row.get("LOW_COUNT") or 0),
                 "total":  int(row.get("TOTAL") or 0),
             }
+        cache_set(cache_key, result, ttl=300)
         return result
 
     def list_meetings_for_account(
@@ -231,12 +274,13 @@ class SnowflakeDataService:
         cur.execute(
             f"""
             SELECT
-                m.ACTIVITY_ID, m.ACCOUNT_ID, m.ACCOUNT_NAME, m.ACE_ASSIGNED,
-                m.SUBJECT, m.ACTIVITY_DATE, m.OWNER_ID, m.PARTICIPANT_NAMES,
-                m.IS_UPCOMING, m.TAKEAWAYS, m.IS_PAIN_POINTS, m.IS_NEXT_STEPS, m.IS_COMPETITOR
-            FROM BKMNG_MEETING_ACTIVITY m
+                m.MEETING_ID AS ACTIVITY_ID, m.ACCOUNT_ID, m.ACCOUNT_NAME, m.ACE_ASSIGNED,
+                m.TITLE AS SUBJECT, m.MEETING_START AS ACTIVITY_DATE,
+                m.ACE_ASSIGNED AS OWNER_ID, m.PARTICIPANTS AS PARTICIPANT_NAMES,
+                m.IS_UPCOMING, m.SUMMARY AS TAKEAWAYS
+            FROM BKMNG_UNIFIED_MEETINGS m
             {where}
-            ORDER BY m.ACTIVITY_DATE DESC
+            ORDER BY m.MEETING_START DESC
             LIMIT {int(limit)}
             """,
             params,
@@ -253,12 +297,45 @@ class SnowflakeDataService:
                 participant_names=r.get("PARTICIPANT_NAMES"),
                 is_upcoming=bool(r.get("IS_UPCOMING")),
                 takeaways=r.get("TAKEAWAYS"),
-                is_pain_points=bool(r.get("IS_PAIN_POINTS")),
-                is_next_steps=bool(r.get("IS_NEXT_STEPS")),
-                is_competitor=bool(r.get("IS_COMPETITOR")),
+                is_pain_points=False,
+                is_next_steps=False,
+                is_competitor=False,
             )
             for r in cur.fetchall()
         ]
+
+    def list_upcoming_meetings(
+        self,
+        account_id: str,
+        limit: int = 10,
+    ) -> list[dict]:
+        cur = self._cursor()
+        cur.execute(
+            f"""
+            SELECT MEETING_ID, ACCOUNT_ID, ACCOUNT_NAME, TITLE, MEETING_START,
+                   MEETING_END, DURATION_MINS, RECORDING_URL, PARTICIPANTS, SOURCE
+            FROM BKMNG_UNIFIED_MEETINGS
+            WHERE ACCOUNT_ID = %s AND IS_UPCOMING = TRUE
+            ORDER BY MEETING_START ASC
+            LIMIT {int(limit)}
+            """,
+            (account_id,),
+        )
+        out: list[dict] = []
+        for r in cur.fetchall():
+            out.append({
+                "meeting_id": r["MEETING_ID"],
+                "account_id": r["ACCOUNT_ID"],
+                "account_name": r.get("ACCOUNT_NAME"),
+                "title": r.get("TITLE"),
+                "meeting_start": r["MEETING_START"].isoformat() if r.get("MEETING_START") else None,
+                "meeting_end": r["MEETING_END"].isoformat() if r.get("MEETING_END") else None,
+                "duration_mins": int(r["DURATION_MINS"]) if r.get("DURATION_MINS") is not None else None,
+                "recording_url": r.get("RECORDING_URL"),
+                "participants": r.get("PARTICIPANTS"),
+                "source": r.get("SOURCE"),
+            })
+        return out
 
     def get_email_activity_for_account(self, account_id: str) -> Optional[EmailActivity]:
         cur = self._cursor()
@@ -490,6 +567,10 @@ class SnowflakeDataService:
         ace_filter: Optional[str] = None,
         acem_filter: Optional[str] = None,
     ) -> list[UseCase]:
+        cache_key = f"use_cases:{account_id}:{ace_filter}:{acem_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         sql = """
             SELECT uc.*,
@@ -517,7 +598,9 @@ class SnowflakeDataService:
             )
         else:
             cur.execute(sql.format(ace_clause=""), (account_id,))
-        return [_row_to_use_case(r) for r in cur.fetchall()]
+        result = [_row_to_use_case(r) for r in cur.fetchall()]
+        cache_set(cache_key, result, ttl=300)
+        return result
 
     # ------------------------------------------------------------------
     # Use Case Forecasts (derived from use cases — no override table yet)
@@ -532,33 +615,35 @@ class SnowflakeDataService:
         return [_derive_forecast(uc) for uc in use_cases]
 
     # ------------------------------------------------------------------
-    # Gong calls — stub until BKMNG_GONG_CALLS is created
+    # Gong calls — sourced from BKMNG_UNIFIED_MEETINGS (past, IS_UPCOMING=FALSE)
     # ------------------------------------------------------------------
 
     def list_gong_calls(
         self, account_id: Optional[str] = None, ace_filter: Optional[str] = None
     ) -> list[GongCall]:
+        cache_key = f"gong_calls:{account_id}:{ace_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
-        filters: list[str] = []
+        filters: list[str] = ["m.IS_UPCOMING = FALSE"]
         params: list = []
         if ace_filter:
-            filters.append("i.ACCOUNT_ID IN (SELECT ACCOUNT_ID FROM TEMP.JUSDAVIS.BKMNG_ACCOUNTS WHERE ACE_ASSIGNED = %s)")
+            filters.append("m.ACE_ASSIGNED = %s")
             params.append(ace_filter)
         if account_id:
-            filters.append("i.ACCOUNT_ID = %s")
+            filters.append("m.ACCOUNT_ID = %s")
             params.append(account_id)
-        where = ("WHERE " + " AND ".join(filters)) if filters else ""
+        where = "WHERE " + " AND ".join(filters)
         sql = f"""
             SELECT
-                i.INTERACTION_ID AS CALL_ID, i.ACCOUNT_ID, i.ACCOUNT_NAME, i.TITLE,
-                i.INTERACTION_DATE AS CALL_DATE,
-                ROUND(i.DURATION_SEC / 60.0, 1) AS DURATION_MINS,
-                i.SUMMARY, i.KEY_POINTS, i.NEXT_STEPS, i.TOPICS,
-                i.PARTICIPANT_EMAILS AS PARTICIPANTS, i.RECORDING_URL,
-                i.CALL_SCORE, i.TALK_RATIO_US, i.TALK_RATIO_THEM
-            FROM TEMP.JUSDAVIS.BKMNG_ONT_INTERACTIONS i
+                m.MEETING_ID AS CALL_ID, m.ACCOUNT_ID, m.ACCOUNT_NAME, m.TITLE,
+                m.MEETING_START AS CALL_DATE, m.DURATION_MINS,
+                m.SUMMARY, m.KEY_POINTS, m.NEXT_STEPS, m.TOPICS,
+                m.PARTICIPANTS, m.RECORDING_URL
+            FROM TEMP.JUSDAVIS.BKMNG_UNIFIED_MEETINGS m
             {where}
-            ORDER BY i.INTERACTION_DATE DESC
+            ORDER BY m.MEETING_START DESC
             LIMIT 50
         """
         cur.execute(sql, params)
@@ -567,30 +652,41 @@ class SnowflakeDataService:
             if not row.get("ACCOUNT_ID"):
                 continue
             topics = [s.strip() for s in (row.get("TOPICS") or "").split(",") if s.strip()]
-            next_steps = []
+            next_steps: list[str] = []
             if row.get("NEXT_STEPS"):
                 next_steps = _split_gong_bullets(row["NEXT_STEPS"])
             participants = [e.strip() for e in (row.get("PARTICIPANTS") or "").split(",") if e.strip()]
+            summary = row.get("SUMMARY")
+            if summary:
+                summary = _clean_gong_text(summary)
+            key_points = row.get("KEY_POINTS")
+            if key_points:
+                key_points = _clean_gong_text(key_points)
             results.append(GongCall(
                 call_id=row["CALL_ID"],
                 account_id=row["ACCOUNT_ID"],
                 title=row.get("TITLE"),
                 call_date=row["CALL_DATE"],
                 duration_minutes=row.get("DURATION_MINS"),
-                summary=row.get("SUMMARY"),
-                key_points=row.get("KEY_POINTS"),
+                summary=summary,
+                key_points=key_points,
                 next_steps=next_steps,
                 outcome=None,
-                call_score=row.get("CALL_SCORE"),
+                call_score=None,
                 direction=None,
                 participants_emails=participants,
                 action_items=next_steps,
                 topics=topics,
                 recording_url=row.get("RECORDING_URL"),
             ))
+        cache_set(cache_key, results, ttl=600)
         return results
 
     def list_contacts_for_account(self, account_id: str) -> list[dict]:
+        cache_key = f"contacts:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         cur.execute(
             """
@@ -604,7 +700,9 @@ class SnowflakeDataService:
             """,
             (account_id,),
         )
-        return [dict(r) for r in cur.fetchall()]
+        result = [dict(r) for r in cur.fetchall()]
+        cache_set(cache_key, result, ttl=1800)
+        return result
 
     def list_topics_for_account(self, account_id: str) -> list[dict]:
         cur = self._cursor()
@@ -743,6 +841,10 @@ Respond with ONLY the JSON object. No preamble, no explanation."""
         }
 
     def list_account_context(self, account_id: str, user_email: str) -> list[dict]:
+        cache_key = f"account_context:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         cur.execute(
             """
@@ -773,7 +875,9 @@ Respond with ONLY the JSON object. No preamble, no explanation."""
             """,
             (account_id,),
         )
-        return [dict(r) for r in cur.fetchall()]
+        result = [dict(r) for r in cur.fetchall()]
+        cache_set(cache_key, result, ttl=180)
+        return result
 
     def list_account_resources(
         self, account_id: Optional[str] = None, ace_filter: Optional[str] = None
@@ -783,6 +887,10 @@ Respond with ONLY the JSON object. No preamble, no explanation."""
     def get_composite_patterns(
         self, account_id: Optional[str] = None, ace_filter: Optional[str] = None, acem_filter: Optional[str] = None
     ) -> list[dict]:
+        cache_key = f"patterns:{account_id}:{ace_filter}:{acem_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         where_parts = []
         params: list = []
@@ -811,13 +919,19 @@ Respond with ONLY the JSON object. No preamble, no explanation."""
             """,
             params,
         )
-        return [{k.lower(): v for k, v in dict(r).items()} for r in cur.fetchall()]
+        result = [{k.lower(): v for k, v in dict(r).items()} for r in cur.fetchall()]
+        cache_set(cache_key, result, ttl=300)
+        return result
 
     # ------------------------------------------------------------------
     # Credits — stub until BKMNG_CREDIT_DAILY is created
     # ------------------------------------------------------------------
 
     def get_account_briefing(self, account_id: str) -> Optional[dict]:
+        cache_key = f"briefing:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         cur.execute(
             """
@@ -835,9 +949,13 @@ Respond with ONLY the JSON object. No preamble, no explanation."""
         row = cur.fetchone()
         if not row:
             return None
-        return {k.lower(): v for k, v in dict(row).items()}
+        result = {k.lower(): v for k, v in dict(row).items()}
+        cache_set(cache_key, result, ttl=1800)
+        return result
 
     def generate_account_briefing(self, account_id: str, account_name: str, ace_email: str) -> dict:
+        cache_invalidate_prefix(f"briefing:{account_id}")
+        cache_invalidate_prefix("bkmng_ctx:")
         cur = self._cursor()
         try:
             cur.execute(
@@ -1030,6 +1148,46 @@ Be specific. Reference actual data above. Return only JSON."""
         except Exception as e:
             return {"error": str(e)}
 
+    def _search_knowledge_assistant(self, cur, query: str, limit: int = 3) -> list:
+        import json as _json
+        if not query or not query.strip():
+            return []
+        try:
+            search_payload = _json.dumps({
+                "query": query,
+                "columns": ["FILE_NAME", "SEISMIC_LINK"],
+                "limit": limit * 3,
+            })
+            cur.execute(
+                "SELECT PARSE_JSON(SNOWFLAKE.CORTEX.SEARCH_PREVIEW('SALES.KNOWLEDGE_ASSISTANT.FILE_SEARCH_SERVICE_PAGENUM_PROD', %s))['results'] AS RESULTS",
+                (search_payload,),
+            )
+            r = cur.fetchone()
+            if not r or not r["RESULTS"]:
+                return []
+            results = r["RESULTS"]
+            if isinstance(results, str):
+                results = _json.loads(results)
+            seen_urls: set = set()
+            links = []
+            for item in results:
+                url = item.get("SEISMIC_LINK") or item.get("FILE_NAME", "")
+                title = item.get("FILE_NAME", "")
+                if not url or url in seen_urls:
+                    continue
+                seen_urls.add(url)
+                is_seismic = "seismic.com" in url
+                links.append({
+                    "url": url,
+                    "title": title.split("/")[-1].replace(".pptx", "").replace(".docx", "").replace(".pdf", "") if not url.startswith("http") else title.split("/")[-1] or title,
+                    "source": "seismic" if is_seismic else "docs",
+                })
+                if len(links) >= limit:
+                    break
+            return links
+        except Exception:
+            return []
+
     def get_meeting_prep(self, account_id: str) -> Optional[dict]:
         cur = self._cursor()
         cur.execute(
@@ -1060,11 +1218,13 @@ Be specific. Reference actual data above. Return only JSON."""
                 else __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
                 - r["generated_at"]
             ).total_seconds() / 3600
-            if age_hours < 6:
+            if age_hours < 20:
                 return r
         return None
 
     def generate_meeting_prep(self, account_id: str, account_name: str, ace_email: str, additional_context: str = "") -> dict:
+        cache_invalidate_prefix(f"briefing:{account_id}")
+        cache_invalidate_prefix("bkmng_ctx:")
         cur = self._cursor()
         try:
             cur.execute(
@@ -1205,29 +1365,6 @@ Be specific. Reference actual data above. Return only JSON."""
 
             cur.execute(
                 """
-                SELECT DISTINCT dl.FEATURE, dl.DOC_URL, dl.DOC_TITLE, dl.PRODUCT_CATEGORY
-                FROM TEMP.JUSDAVIS.BKMNG_A360_PRODUCT_ADOPTION pa
-                JOIN TEMP.JUSDAVIS.BKMNG_FEATURE_DOC_LINKS dl ON pa.FEATURE = dl.FEATURE
-                WHERE pa.ACCOUNT_ID = %s AND pa.IS_ACTIVE_30D = TRUE
-                """,
-                (account_id,),
-            )
-            doc_link_rows = cur.fetchall()
-            doc_links_map = {
-                r["FEATURE"]: {"url": r["DOC_URL"], "title": r["DOC_TITLE"], "category": r["PRODUCT_CATEGORY"]}
-                for r in doc_link_rows
-            }
-
-            cur.execute(
-                """
-                SELECT dl.FEATURE, dl.DOC_URL, dl.DOC_TITLE
-                FROM TEMP.JUSDAVIS.BKMNG_FEATURE_DOC_LINKS dl
-                """,
-            )
-            all_doc_links = {r["FEATURE"]: {"url": r["DOC_URL"], "title": r["DOC_TITLE"]} for r in cur.fetchall()}
-
-            cur.execute(
-                """
                 SELECT MILESTONE_NAME, TIER, STATUS, PRIORITY, INDUSTRY_PRIORITY,
                        RAW_VALUE::VARCHAR AS RAW_VALUE
                 FROM BKMNG_SECURITY_POSTURE
@@ -1356,24 +1493,21 @@ RULES:
                 except Exception:
                     pass
 
+            _ka_cache: dict = {}
+
+            def _get_ka_links(query: str) -> list:
+                if not query:
+                    return []
+                if query not in _ka_cache:
+                    _ka_cache[query] = self._search_knowledge_assistant(cur, query, limit=2)
+                return _ka_cache[query]
+
             for topic in parsed.get("suggested_topics", []):
-                feature_area = topic.get("feature_area", "")
-                links = []
-                if feature_area and feature_area in all_doc_links:
-                    links.append(all_doc_links[feature_area])
-                else:
-                    for feat_name, link_info in doc_links_map.items():
-                        if feature_area and feature_area.lower() in feat_name.lower():
-                            links.append({"url": link_info["url"], "title": link_info["title"]})
-                            break
-                topic["doc_links"] = links
+                feature_area = topic.get("feature_area", "") or topic.get("topic", "")
+                topic["doc_links"] = _get_ka_links(feature_area)
 
             for signal in parsed.get("feature_signals", []):
-                feat = signal.get("feature", "")
-                links = []
-                if feat in all_doc_links:
-                    links.append(all_doc_links[feat])
-                signal["doc_links"] = links
+                signal["doc_links"] = _get_ka_links(signal.get("feature", ""))
 
             import datetime as _dt
             generated_at = _dt.datetime.now(_dt.timezone.utc)
@@ -1577,6 +1711,8 @@ Respond with ONLY this JSON:
         sql = """
             SELECT
                 c.ACCOUNT_ID,
+                c.NET_ACV,
+                c.NET_TCV,
                 c.NET_TCV AS contract_capacity,
                 c.REV_90D AS total_consumed_revenue,
                 c.REV_180D AS total_consumed_credits,
@@ -1615,6 +1751,8 @@ Respond with ONLY this JSON:
             aid = row["ACCOUNT_ID"]
             result[aid] = AccountRevenueSummary(
                 account_id=aid,
+                net_acv=float(row["NET_ACV"]) if row.get("NET_ACV") is not None else None,
+                net_tcv=float(row["NET_TCV"]) if row.get("NET_TCV") is not None else None,
                 contract_capacity=float(row["CONTRACT_CAPACITY"]) if row.get("CONTRACT_CAPACITY") is not None else None,
                 total_consumed_revenue=float(row["TOTAL_CONSUMED_REVENUE"]) if row.get("TOTAL_CONSUMED_REVENUE") is not None else None,
                 capacity_remaining=float(row["CAPACITY_REMAINING"]) if row.get("CAPACITY_REMAINING") is not None else None,
@@ -1637,6 +1775,8 @@ Respond with ONLY this JSON:
             """
             SELECT
                 c.ACCOUNT_ID,
+                c.NET_ACV,
+                c.NET_TCV,
                 c.NET_TCV AS contract_capacity,
                 c.REV_90D AS total_consumed_revenue,
                 c.REV_180D AS total_consumed_credits,
@@ -1658,6 +1798,8 @@ Respond with ONLY this JSON:
             return None
         return AccountRevenueSummary(
             account_id=account_id,
+            net_acv=float(row["NET_ACV"]) if row.get("NET_ACV") is not None else None,
+            net_tcv=float(row["NET_TCV"]) if row.get("NET_TCV") is not None else None,
             contract_capacity=float(row["CONTRACT_CAPACITY"]) if row.get("CONTRACT_CAPACITY") is not None else None,
             total_consumed_revenue=float(row["TOTAL_CONSUMED_REVENUE"]) if row.get("TOTAL_CONSUMED_REVENUE") is not None else None,
             capacity_remaining=float(row["CAPACITY_REMAINING"]) if row.get("CAPACITY_REMAINING") is not None else None,
@@ -1773,6 +1915,7 @@ Respond with ONLY this JSON:
             "account_name": row.get("ACCOUNT_NAME"),
             "tracking_status": row["TRACKING_STATUS"],
             "notes": row.get("NOTES"),
+            "notes_doc_url": row.get("NOTES_DOC_URL"),
             "updated_at": str(row["UPDATED_AT"]) if row.get("UPDATED_AT") else None,
         }
 
@@ -1783,6 +1926,7 @@ Respond with ONLY this JSON:
         status: str,
         account_name: Optional[str] = None,
         notes: Optional[str] = None,
+        notes_doc_url: Optional[str] = None,
     ) -> dict:
         cur = self._cursor()
         cur.execute(
@@ -1794,19 +1938,21 @@ Respond with ONLY this JSON:
                 TRACKING_STATUS = %s,
                 ACCOUNT_NAME = COALESCE(%s, t.ACCOUNT_NAME),
                 NOTES = %s,
+                NOTES_DOC_URL = %s,
                 UPDATED_AT = CURRENT_TIMESTAMP()
             WHEN NOT MATCHED THEN INSERT
-                (USER_EMAIL, ACCOUNT_ID, ACCOUNT_NAME, TRACKING_STATUS, NOTES, CREATED_AT, UPDATED_AT)
-            VALUES (%s, %s, %s, %s, %s, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
+                (USER_EMAIL, ACCOUNT_ID, ACCOUNT_NAME, TRACKING_STATUS, NOTES, NOTES_DOC_URL, CREATED_AT, UPDATED_AT)
+            VALUES (%s, %s, %s, %s, %s, %s, CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP())
             """,
-            (account_id, user_email, status, account_name, notes,
-             user_email, account_id, account_name, status, notes),
+            (account_id, user_email, status, account_name, notes, notes_doc_url,
+             user_email, account_id, account_name, status, notes, notes_doc_url),
         )
         return {
             "account_id": account_id,
             "account_name": account_name,
             "tracking_status": status,
             "notes": notes,
+            "notes_doc_url": notes_doc_url,
             "updated_at": None,
         }
 
@@ -1823,34 +1969,78 @@ Respond with ONLY this JSON:
         status: Optional[str] = None,
         engagement_status: Optional[str] = None,
         no_recording: Optional[bool] = None,
+        engagement_start_date: Optional[str] = None,
+        rolloff_date: Optional[str] = None,
+        updated_by: Optional[str] = None,
     ) -> None:
+        cache_invalidate_prefix(f"account:{account_id}")
+        cache_invalidate_prefix("list_accounts:")
+        cache_invalidate_prefix("bkmng_ctx:")
         cur = self._cursor()
-        if status is not None or engagement_status is not None:
-            parts = []
-            params = []
-            if status is not None:
-                parts.append("STATUS = %s")
-                params.append(status)
-            if engagement_status is not None:
-                parts.append("ENGAGEMENT_STATUS = %s")
-                params.append(engagement_status)
-            params.append(account_id)
-            cur.execute(
-                f"UPDATE TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS SET {', '.join(parts)} WHERE ACCOUNT_ID = %s",
-                params,
-            )
+        settings_fields = []
+        if status is not None:
+            settings_fields.append(("STATUS", status if status != "" else None))
+        if engagement_status is not None:
+            settings_fields.append(("ENGAGEMENT_STATUS", engagement_status if engagement_status != "" else None))
         if no_recording is not None:
+            settings_fields.append(("NO_RECORDING", no_recording))
+        if engagement_start_date is not None:
+            settings_fields.append(("ENGAGEMENT_START_DATE", engagement_start_date if engagement_start_date != "" else None))
+        if rolloff_date is not None:
+            settings_fields.append(("ROLLOFF_DATE", rolloff_date if rolloff_date != "" else None))
+        if settings_fields:
+            set_clauses = ", ".join(f"t.{col} = s.{col}" for col, _ in settings_fields)
+            src_cols = ", ".join(f"%s AS {col}" for col, _ in settings_fields)
+            ins_cols = "ACCOUNT_ID, UPDATED_AT, UPDATED_BY, " + ", ".join(col for col, _ in settings_fields)
+            ins_vals = "s.ACCOUNT_ID, s.UPDATED_AT, s.UPDATED_BY, " + ", ".join(f"s.{col}" for col, _ in settings_fields)
+            params = [v for _, v in settings_fields]
             cur.execute(
-                """
+                f"""
                 MERGE INTO TEMP.JUSDAVIS.BKMNG_ACCOUNT_SETTINGS t
-                USING (SELECT %s AS ACCOUNT_ID, %s AS NO_RECORDING, CURRENT_TIMESTAMP() AS UPDATED_AT) s
+                USING (SELECT %s AS ACCOUNT_ID, CURRENT_TIMESTAMP() AS UPDATED_AT, %s AS UPDATED_BY, {src_cols}) s
                 ON t.ACCOUNT_ID = s.ACCOUNT_ID
-                WHEN MATCHED THEN UPDATE SET t.NO_RECORDING = s.NO_RECORDING, t.UPDATED_AT = s.UPDATED_AT
-                WHEN NOT MATCHED THEN INSERT (ACCOUNT_ID, NO_RECORDING, UPDATED_AT)
-                    VALUES (s.ACCOUNT_ID, s.NO_RECORDING, s.UPDATED_AT)
+                WHEN MATCHED THEN UPDATE SET {set_clauses}, t.UPDATED_AT = s.UPDATED_AT, t.UPDATED_BY = s.UPDATED_BY
+                WHEN NOT MATCHED THEN INSERT ({ins_cols})
+                    VALUES ({ins_vals})
                 """,
-                (account_id, no_recording),
+                ([account_id, updated_by] + params),
             )
+        # Project STATUS / ENGAGEMENT_STATUS into BKMNG_ONT_ACCOUNTS so readers
+        # (which hit ONT) see the change immediately. The scheduled refresh
+        # (SP_REFRESH_BKMNG_ONT_ACCOUNTS) rebuilds this projection from settings.
+        ont_parts = []
+        ont_params = []
+        if status is not None:
+            ont_parts.append("STATUS = %s")
+            ont_params.append(status if status != "" else None)
+        if engagement_status is not None:
+            ont_parts.append("ENGAGEMENT_STATUS = %s")
+            ont_params.append(engagement_status if engagement_status != "" else None)
+        if ont_parts:
+            ont_params.append(account_id)
+            cur.execute(
+                f"UPDATE TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS SET {', '.join(ont_parts)} WHERE ACCOUNT_ID = %s",
+                ont_params,
+            )
+
+    def manual_refresh_account(self, account_id: str) -> str:
+        """Trigger SP_MANUAL_REFRESH_FOR_ACCOUNT to pull fresh data from
+        Salesforce/Fivetran for a single account and rebuild its derived data
+        (ONT row, signals, composite patterns, user alerts)."""
+        cur = self._cursor()
+        cur.execute(
+            "CALL TEMP.JUSDAVIS.SP_MANUAL_REFRESH_FOR_ACCOUNT(%s)", [account_id]
+        )
+        row = cur.fetchone()
+        return row[0] if row else "OK"
+
+    def manual_refresh_book(self) -> str:
+        """Trigger SP_MANUAL_REFRESH_FOR_BOOK to run the full refresh pipeline
+        end-to-end (Salesforce tasks + ONT rebuild + signals + patterns + alerts)."""
+        cur = self._cursor()
+        cur.execute("CALL TEMP.JUSDAVIS.SP_MANUAL_REFRESH_FOR_BOOK()")
+        row = cur.fetchone()
+        return row[0] if row else "OK"
 
     def list_manual_meetings(self, account_id: str) -> list[ManualMeeting]:
         cur = self._cursor()
@@ -1891,6 +2081,7 @@ Respond with ONLY this JSON:
         attendees: Optional[str],
         created_by: str,
     ) -> ManualMeeting:
+        cache_invalidate_prefix("bkmng_ctx:")
         import uuid as _uuid
         meeting_id = str(_uuid.uuid4())
         cur = self._cursor()
@@ -1922,6 +2113,7 @@ Respond with ONLY this JSON:
         notes: str,
         user_email: str,
     ) -> Optional[ManualMeeting]:
+        cache_invalidate_prefix("bkmng_ctx:")
         cur = self._cursor()
         cur.execute(
             """
@@ -2002,6 +2194,9 @@ Respond with ONLY this JSON:
         context_date: Optional[str],
         created_by: str,
     ) -> dict:
+        cache_invalidate_prefix(f"timeline:{account_id}")
+        cache_invalidate_prefix(f"account_context:{account_id}")
+        cache_invalidate_prefix("bkmng_ctx:")
         import uuid as _uuid
         from datetime import date as _date
         meeting_id = str(_uuid.uuid4())
@@ -2039,6 +2234,7 @@ Respond with ONLY this JSON:
         created_by: str,
         auto_title: bool = True,
     ) -> None:
+        cache_invalidate_prefix("bkmng_ctx:")
         type_labels = {
             "meeting_notes": "meeting notes",
             "transcript": "meeting transcript",
@@ -2177,6 +2373,9 @@ Respond with ONLY this JSON:
         if cur.rowcount == 0:
             return False
         if raw_content and account_id:
+            cache_invalidate_prefix(f"timeline:{account_id}")
+            cache_invalidate_prefix(f"account_context:{account_id}")
+            cache_invalidate_prefix("bkmng_ctx:")
             try:
                 cur.execute(
                     """
@@ -2267,6 +2466,11 @@ Respond with ONLY this JSON:
         acem_filter: Optional[str] = None,
         account_id: Optional[str] = None,
     ) -> str:
+        cache_key = f"bkmng_ctx:{user_email}:{account_id or ''}:{ace_filter or ''}:{acem_filter or ''}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+
         cur = self._cursor()
 
         scope_where = ""
@@ -2365,16 +2569,17 @@ Respond with ONLY this JSON:
         signal_section = get_registry().get_ai_context(cur, _sig_scope, limit=6)
 
         note_params: list = [user_email]
-        note_where = "WHERE (uc.CREATED_BY = %s OR uc.CREATED_BY IS NULL) AND uc.IS_ACTIVE = TRUE"
+        note_where = "WHERE (uc.CREATED_BY = %s OR uc.CREATED_BY IS NULL) AND uc.IS_ACTIVE = TRUE AND uc.PARSE_STATUS != 'error'"
         if account_id:
             note_where += " AND (uc.ACCOUNT_ID = %s OR uc.ACCOUNT_ID IS NULL)"
             note_params.append(account_id)
 
         cur.execute(
             f"""
-            SELECT uc.ACCOUNT_NAME, uc.CONTEXT_TYPE, uc.CONTENT,
-                   uc.CREATED_AT::DATE AS note_date, uc.SOURCE
-            FROM BKMNG_USER_CONTEXT uc
+            SELECT uc.ACCOUNT_NAME, uc.SOURCE_TYPE, uc.RAW_CONTENT,
+                   uc.PARSED_SUMMARY, uc.TOPICS_DISCUSSED, uc.ACTION_ITEMS,
+                   uc.CREATED_AT::DATE AS note_date
+            FROM BKMNG_USER_CONTEXT_V2 uc
             {note_where}
             ORDER BY uc.CREATED_AT DESC
             LIMIT 10
@@ -2384,10 +2589,17 @@ Respond with ONLY this JSON:
         notes = cur.fetchall()
         notes_section = ""
         if notes:
-            note_lines = [
-                f"  - [{r.get('NOTE_DATE')}, {r.get('SOURCE', 'manual')}] {str(r.get('CONTENT', ''))[:300]}"
-                for r in notes
-            ]
+            note_lines = []
+            for r in notes:
+                summary = r.get("PARSED_SUMMARY") or str(r.get("RAW_CONTENT", ""))
+                topics = r.get("TOPICS_DISCUSSED") or ""
+                actions = r.get("ACTION_ITEMS") or ""
+                line = f"  - [{r.get('NOTE_DATE')}, {r.get('SOURCE_TYPE', 'manual')}] {str(summary)[:300]}"
+                if topics:
+                    line += f" | Topics: {str(topics)[:100]}"
+                if actions:
+                    line += f" | Actions: {str(actions)[:100]}"
+                note_lines.append(line)
             notes_section = "\nACCOUNT NOTES & CONTEXT:\n" + "\n".join(note_lines) + "\n"
 
         account_section = ""
@@ -2600,6 +2812,194 @@ Respond with ONLY this JSON:
                             f"[{u.get('STATUS')}/{u.get('STAGE')}]{score}{gl}{vel}{contact}\n"
                         )
 
+                # Contract spend + short-window revenue
+                try:
+                    cur.execute(
+                        """
+                        SELECT CONTRACT_SPEND, REV_30D, NET_ACV,
+                               CONTRACT_START_DATE, CONTRACT_END_DATE,
+                               DAYS_UNTIL_CONTRACT_END
+                        FROM BKMNG_A360_CONTRACT
+                        WHERE ACCOUNT_ID = %s
+                        LIMIT 1
+                        """,
+                        (account_id,),
+                    )
+                    cr2 = cur.fetchone()
+                    if cr2:
+                        spend = cr2.get("CONTRACT_SPEND")
+                        rev30 = cr2.get("REV_30D")
+                        acv = cr2.get("NET_ACV")
+                        d_end = cr2.get("DAYS_UNTIL_CONTRACT_END")
+                        pieces = []
+                        if spend is not None: pieces.append(f"Contract spend to-date: ${float(spend):,.0f}")
+                        if acv is not None: pieces.append(f"NET ACV: ${float(acv):,.0f}")
+                        if rev30 is not None: pieces.append(f"Rev 30d: ${float(rev30):,.0f}")
+                        if d_end is not None: pieces.append(f"Days to renewal: {d_end}")
+                        if pieces:
+                            account_section += "CONTRACT SPEND: " + " | ".join(pieces) + "\n"
+                except Exception:
+                    pass
+
+                # Latest AI account assessment
+                try:
+                    cur.execute(
+                        """
+                        SELECT AI_TIER, PRIORITY_TIER, RISK_LEVEL, RATIONALE,
+                               RECOMMENDED_ACTIONS, COMPUTED_AT::DATE AS computed_date
+                        FROM BKMNG_AI_ACCOUNT_ASSESSMENTS
+                        WHERE ACCOUNT_ID = %s
+                        ORDER BY COMPUTED_AT DESC LIMIT 1
+                        """,
+                        (account_id,),
+                    )
+                    aa = cur.fetchone()
+                    if aa:
+                        account_section += (
+                            f"AI ASSESSMENT ({aa.get('COMPUTED_DATE')}): "
+                            f"Tier={aa.get('AI_TIER') or 'N/A'}  Priority={aa.get('PRIORITY_TIER') or 'N/A'}  "
+                            f"Risk={aa.get('RISK_LEVEL') or 'N/A'}\n"
+                        )
+                        if aa.get('RATIONALE'):
+                            account_section += f"  Rationale: {str(aa.get('RATIONALE'))[:400]}\n"
+                        if aa.get('RECOMMENDED_ACTIONS'):
+                            account_section += f"  Actions: {str(aa.get('RECOMMENDED_ACTIONS'))[:400]}\n"
+                except Exception:
+                    pass
+
+                # Top composite patterns for this account (fresh only)
+                try:
+                    cur.execute(
+                        """
+                        SELECT PATTERN_NAME, CATEGORY, SEVERITY, DESCRIPTION, RECOMMENDED_ACTION
+                        FROM BKMNG_COMPOSITE_PATTERNS
+                        WHERE ACCOUNT_ID = %s
+                        ORDER BY CASE SEVERITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
+                        LIMIT 3
+                        """,
+                        (account_id,),
+                    )
+                    patterns = cur.fetchall()
+                    if patterns:
+                        account_section += "COMPOSITE PATTERNS:\n"
+                        for p in patterns:
+                            account_section += (
+                                f"  - [{(p.get('SEVERITY') or 'medium').upper()}] "
+                                f"{p.get('PATTERN_NAME')} ({p.get('CATEGORY')}): "
+                                f"{str(p.get('DESCRIPTION') or '')[:200]}\n"
+                            )
+                            if p.get('RECOMMENDED_ACTION'):
+                                account_section += f"    Action: {str(p.get('RECOMMENDED_ACTION'))[:200]}\n"
+                except Exception:
+                    pass
+
+                # Active (non-muted) alerts for this user on this account
+                try:
+                    cur.execute(
+                        """
+                        SELECT a.SIGNAL_TYPE, a.PRIORITY, a.SIGNAL_TEXT, a.ALERT_DATE::DATE AS adate
+                        FROM BKMNG_USER_ALERTS a
+                        LEFT JOIN BKMNG_ALERT_MUTES m
+                          ON m.USER_EMAIL = a.USER_EMAIL
+                         AND (m.SIGNAL_ID = a.SIGNAL_ID OR (m.SIGNAL_TYPE = a.SIGNAL_TYPE AND m.SIGNAL_ID IS NULL))
+                         AND m.MUTED_UNTIL > CURRENT_TIMESTAMP()
+                        WHERE a.ACCOUNT_ID = %s AND a.USER_EMAIL = %s
+                          AND m.MUTE_ID IS NULL
+                        ORDER BY CASE a.PRIORITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+                                 a.ALERT_DATE DESC
+                        LIMIT 5
+                        """,
+                        (account_id, user_email),
+                    )
+                    alerts = cur.fetchall()
+                    if alerts:
+                        account_section += "ACTIVE ALERTS:\n"
+                        for al in alerts:
+                            account_section += (
+                                f"  - [{(al.get('PRIORITY') or 'medium').upper()}] "
+                                f"{al.get('SIGNAL_TYPE')} ({al.get('ADATE')}): "
+                                f"{str(al.get('SIGNAL_TEXT') or '')[:200]}\n"
+                            )
+                except Exception:
+                    pass
+
+                # Upcoming meetings (14 days)
+                try:
+                    cur.execute(
+                        """
+                        SELECT MEETING_DATE::DATE AS mdate, TITLE, ATTENDEES
+                        FROM BKMNG_MEETING_ACTIVITY
+                        WHERE ACCOUNT_ID = %s
+                          AND MEETING_DATE >= CURRENT_DATE()
+                          AND MEETING_DATE <= DATEADD('day', 14, CURRENT_DATE())
+                        ORDER BY MEETING_DATE ASC
+                        LIMIT 5
+                        """,
+                        (account_id,),
+                    )
+                    upcoming = cur.fetchall()
+                    if upcoming:
+                        account_section += "UPCOMING MEETINGS (14d):\n"
+                        for um in upcoming:
+                            att = str(um.get('ATTENDEES') or '')[:120]
+                            account_section += (
+                                f"  - {um.get('MDATE')}: \"{um.get('TITLE') or 'untitled'}\""
+                                f"{(' | ' + att) if att else ''}\n"
+                            )
+                except Exception:
+                    pass
+
+                # Latest briefing (<=24h)
+                try:
+                    cur.execute(
+                        """
+                        SELECT SITUATION_SUMMARY, TOP_RISK, TOP_OPPORTUNITY,
+                               RECOMMENDED_ACTIONS, GENERATED_AT
+                        FROM BKMNG_ACCOUNT_BRIEFINGS
+                        WHERE ACCOUNT_ID = %s
+                          AND GENERATED_AT >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
+                        ORDER BY GENERATED_AT DESC LIMIT 1
+                        """,
+                        (account_id,),
+                    )
+                    br = cur.fetchone()
+                    if br:
+                        account_section += "LATEST BRIEFING (fresh):\n"
+                        if br.get('SITUATION_SUMMARY'):
+                            account_section += f"  Situation: {str(br.get('SITUATION_SUMMARY'))[:400]}\n"
+                        if br.get('TOP_RISK'):
+                            account_section += f"  Top risk: {str(br.get('TOP_RISK'))[:300]}\n"
+                        if br.get('TOP_OPPORTUNITY'):
+                            account_section += f"  Top opportunity: {str(br.get('TOP_OPPORTUNITY'))[:300]}\n"
+                        if br.get('RECOMMENDED_ACTIONS'):
+                            account_section += f"  Actions: {str(br.get('RECOMMENDED_ACTIONS'))[:400]}\n"
+                except Exception:
+                    pass
+
+                # Latest meeting prep (<=24h)
+                try:
+                    cur.execute(
+                        """
+                        SELECT SUGGESTED_AGENDA, OPEN_ACTION_ITEMS, QUESTIONS_TO_ASK, GENERATED_AT
+                        FROM BKMNG_MEETING_PREPS
+                        WHERE ACCOUNT_ID = %s
+                          AND GENERATED_AT >= DATEADD('hour', -24, CURRENT_TIMESTAMP())
+                        ORDER BY GENERATED_AT DESC LIMIT 1
+                        """,
+                        (account_id,),
+                    )
+                    mp = cur.fetchone()
+                    if mp:
+                        account_section += "LATEST MEETING PREP (fresh):\n"
+                        if mp.get('SUGGESTED_AGENDA'):
+                            account_section += f"  Agenda: {str(mp.get('SUGGESTED_AGENDA'))[:400]}\n"
+                        if mp.get('OPEN_ACTION_ITEMS'):
+                            account_section += f"  Open actions: {str(mp.get('OPEN_ACTION_ITEMS'))[:300]}\n"
+                        if mp.get('QUESTIONS_TO_ASK'):
+                            account_section += f"  Questions: {str(mp.get('QUESTIONS_TO_ASK'))[:300]}\n"
+                except Exception:
+                    pass
+
         adopt_section = (
             f"PLATFORM ADOPTION ({adopt_with_data} accounts with signal data):\n"
             f"  Avg categories: {adopt_avg:.1f}/8  "
@@ -2670,6 +3070,7 @@ Respond with ONLY this JSON:
         context = context.strip()
         if len(context) > 14000:
             context = context[:14000] + "\n[Context truncated]\n"
+        cache_set(cache_key, context, ttl=300)
         return context
 
     def call_cortex_analyst(
@@ -2685,7 +3086,7 @@ Respond with ONLY this JSON:
         pat = settings.snowflake_pat or ""
         url = f"https://{account_str}.snowflakecomputing.com/api/v2/cortex/analyst/message"
         headers = {
-            "Authorization": f'Snowflake Token="{pat}"',
+            "Authorization": f"Bearer {pat}",
             "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN",
             "Content-Type": "application/json",
         }
@@ -2885,7 +3286,7 @@ Respond with ONLY this JSON:
         name_map = {r["ACCOUNT_ID"]: r["ACCOUNT_NAME"] for r in rev_cur.fetchall()}
 
         rev2 = self._cursor()
-        rev2.execute("SELECT ACCOUNT_ID, NET_TCV AS CONTRACT_CAPACITY, GREATEST(0, COALESCE(NET_TCV,0)-COALESCE(REV_180D,0)) AS CAPACITY_REMAINING, REV_180D AS TOTAL_CONSUMED_CREDITS FROM BKMNG_A360_CONTRACT")
+        rev2.execute("SELECT ACCOUNT_ID, NET_ACV, NET_TCV, NET_TCV AS CONTRACT_CAPACITY, GREATEST(0, COALESCE(NET_TCV,0)-COALESCE(REV_180D,0)) AS CAPACITY_REMAINING, REV_180D AS TOTAL_CONSUMED_CREDITS FROM BKMNG_A360_CONTRACT")
         contract_map = {r["ACCOUNT_ID"]: r for r in rev2.fetchall()}
 
         accounts_out = []
@@ -2930,6 +3331,8 @@ Respond with ONLY this JSON:
 
             cr = contract_map.get(aid)
             capacity = float(cr["CONTRACT_CAPACITY"]) if cr and cr.get("CONTRACT_CAPACITY") else None
+            net_acv = float(cr["NET_ACV"]) if cr and cr.get("NET_ACV") is not None else None
+            net_tcv = float(cr["NET_TCV"]) if cr and cr.get("NET_TCV") is not None else None
             cap_remaining = float(cr["CAPACITY_REMAINING"]) if cr and cr.get("CAPACITY_REMAINING") else None
             consumed = float(cr["TOTAL_CONSUMED_CREDITS"]) if cr and cr.get("TOTAL_CONSUMED_CREDITS") else None
             pct_proj = round(fy_total / capacity * 100, 1) if capacity and capacity > 0 else None
@@ -2937,6 +3340,8 @@ Respond with ONLY this JSON:
             accounts_out.append({
                 "account_id": aid,
                 "account_name": name_map.get(aid, aid),
+                "net_acv": net_acv,
+                "net_tcv": net_tcv,
                 "contract_capacity": capacity,
                 "capacity_remaining": cap_remaining,
                 "total_consumed_credits": consumed,
@@ -2959,12 +3364,20 @@ Respond with ONLY this JSON:
             "accounts": accounts_out,
         }
 
-    def list_nba_items(self, ace_filter: Optional[str] = None, acem_filter: Optional[str] = None) -> list[NBAItem]:
+    def list_nba_items(self, ace_filter: Optional[str] = None, acem_filter: Optional[str] = None) -> dict:
+        cache_key = f"nba:{ace_filter}:{acem_filter}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         from app.signals import get_registry
         from app.signals.models import SignalScope
         scope = SignalScope(user_email="", ace_filter=ace_filter, acem_filter=acem_filter)
-        cap = 10 if acem_filter else 8
-        return get_registry().get_nba_items(self._cursor(), scope, cap=cap)
+        client_items, admin_items = get_registry().get_nba_items(
+            self._cursor(), scope, cap_client=10, cap_admin=8
+        )
+        result = {"client": client_items, "admin": admin_items}
+        cache_set(cache_key, result, ttl=300)
+        return result
 
 
     def get_recent_feature_adoptions(self, ace_filter: Optional[str] = None, acem_filter: Optional[str] = None, days: int = 7) -> list[dict]:
@@ -3010,6 +3423,10 @@ Respond with ONLY this JSON:
         ]
 
     def get_account_timeline(self, account_id: str) -> list[dict]:
+        cache_key = f"timeline:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         cur.execute(
             """
@@ -3059,7 +3476,7 @@ Respond with ONLY this JSON:
             (account_id, account_id),
         )
         rows = cur.fetchall()
-        return [
+        result = [
             {
                 "note_id": r["NOTE_ID"],
                 "use_case_id": r["USE_CASE_ID"],
@@ -3073,8 +3490,14 @@ Respond with ONLY this JSON:
             for r in rows
             if r.get("CONTENT")
         ]
+        cache_set(cache_key, result, ttl=180)
+        return result
 
     def get_account_adoption(self, account_id: str) -> dict:
+        cache_key = f"adoption:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
         cur = self._cursor()
         cur.execute(
             """
@@ -3140,7 +3563,9 @@ Respond with ONLY this JSON:
             }
             for r in feature_rows
         ]
-        return {"signals": signals, "features": features}
+        result = {"signals": signals, "features": features}
+        cache_set(cache_key, result, ttl=600)
+        return result
 
 
     def get_security_posture(self, account_id: str) -> dict:
@@ -3312,6 +3737,9 @@ def _row_to_account(r: dict) -> Account:
         no_recording=bool(r.get("NO_RECORDING") or False),
         lead_se_email=r.get("LEAD_SE_EMAIL"),
         ae_email=r.get("AE_EMAIL"),
+        ae_name=r.get("AE_NAME"),
+        engagement_start_date=_d(r.get("ENGAGEMENT_START_DATE")),
+        rolloff_date=_d(r.get("ROLLOFF_DATE")),
     )
 
 

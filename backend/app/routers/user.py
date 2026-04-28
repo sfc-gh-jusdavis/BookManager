@@ -60,6 +60,22 @@ ALERT_CATALOG = [
         "default_priority": "low",
     },
     {
+        "signal_type": "stale_use_case",
+        "label": "PS Notes Update Needed",
+        "description": (
+            "Per-use-case PS notes reminder. Fires weekly (Fridays) for active "
+            "use cases with no notes or notes older than 7 days. Paused/stopped "
+            "accounts fire when notes are 14+ days old on any day."
+        ),
+        "how_generated": (
+            "Populated by SP_CHECK_STALE_USE_CASES. One alert per active use case "
+            "with missing or stale PS notes. Auto-dismisses when the account status "
+            "becomes 'complete'. Scoped to you via LEAD_SE."
+        ),
+        "category": "use_case",
+        "default_priority": "medium",
+    },
+    {
         "signal_type": "blocker",
         "label": "Use Case Blocked",
         "description": (
@@ -208,6 +224,38 @@ ALERT_CATALOG = [
         ),
         "category": "support",
         "default_priority": "high",
+    },
+    {
+        "signal_type": "security_gap_critical",
+        "label": "Critical Security Gap",
+        "description": (
+            "Fires when an account has a critical security milestone (e.g. MFA, SSO, "
+            "ACCOUNTADMIN sprawl) that is not started or only partially implemented "
+            "for an industry where the milestone is required."
+        ),
+        "how_generated": (
+            "Populated by SP_REFRESH_BKMNG_SECURITY_SIGNALS from BKMNG_SECURITY_POSTURE. "
+            "Fires when PRIORITY='critical', INDUSTRY_PRIORITY='required', and STATUS is "
+            "'not_started' or 'partial'. Scoped to your assigned accounts."
+        ),
+        "category": "security",
+        "default_priority": "high",
+    },
+    {
+        "signal_type": "security_gap_high",
+        "label": "High-Priority Security Gap",
+        "description": (
+            "Fires when an account has a high-priority security milestone that is not "
+            "started or only partially implemented for an industry where the milestone "
+            "is required."
+        ),
+        "how_generated": (
+            "Populated by SP_REFRESH_BKMNG_SECURITY_SIGNALS from BKMNG_SECURITY_POSTURE. "
+            "Fires when PRIORITY='high', INDUSTRY_PRIORITY='required', and STATUS is "
+            "'not_started' or 'partial'. Scoped to your assigned accounts."
+        ),
+        "category": "security",
+        "default_priority": "medium",
     },
 ]
 

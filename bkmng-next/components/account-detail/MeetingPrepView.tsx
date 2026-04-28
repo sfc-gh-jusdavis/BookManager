@@ -6,6 +6,7 @@ import {
   useRefreshMeetingPrep,
   useGeneratePrepEmail,
   useAccountContacts,
+  useSaveMeetingPrepContext,
 } from "@/hooks/useApi";
 import type {
   MeetingPrep,
@@ -35,6 +36,7 @@ import {
   MessageSquare,
   BookOpen,
   ArrowUpRight,
+  Presentation,
 } from "lucide-react";
 
 type RichAction = { item: string; source?: string; owner?: string; reasoning?: string };
@@ -94,19 +96,27 @@ function DocLinkPills({ links }: { links: DocLink[] }) {
   if (!links || links.length === 0) return null;
   return (
     <div className="flex flex-wrap gap-1.5 mt-1.5">
-      {links.map((link, i) => (
-        <a
-          key={i}
-          href={link.url}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex items-center gap-1 text-[10px] text-sky-600 bg-sky-50 hover:bg-sky-100 rounded-full px-2.5 py-0.5 transition-colors border border-sky-100"
-        >
-          <BookOpen size={9} />
-          {link.title}
-          <ExternalLink size={8} />
-        </a>
-      ))}
+      {links.map((link, i) => {
+        const isSeismic = link.source === "seismic" || link.url?.includes("seismic.com");
+        return (
+          <a
+            key={i}
+            href={link.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={`inline-flex items-center gap-1 text-[10px] rounded-full px-2.5 py-0.5 transition-colors border ${
+              isSeismic
+                ? "text-violet-600 bg-violet-50 hover:bg-violet-100 border-violet-100"
+                : "text-sky-600 bg-sky-50 hover:bg-sky-100 border-sky-100"
+            }`}
+            title={link.url}
+          >
+            {isSeismic ? <Presentation size={9} /> : <BookOpen size={9} />}
+            {link.title}
+            <ExternalLink size={8} />
+          </a>
+        );
+      })}
     </div>
   );
 }
@@ -162,9 +172,11 @@ export function MeetingPrepView({
     isLoading: boolean;
   };
   const { mutate: refresh, isPending: generating } = useRefreshMeetingPrep(accountId);
+  const { mutate: saveContext, isPending: saving } = useSaveMeetingPrepContext(accountId);
   const { mutate: genEmail, isPending: emailGenerating, data: emailData } = useGeneratePrepEmail(accountId);
   const { data: contacts } = useAccountContacts(accountId);
   const [context, setContext] = useState("");
+  const [savedHint, setSavedHint] = useState(false);
   const [copied, setCopied] = useState(false);
   const [emailCopied, setEmailCopied] = useState(false);
   const [checkedItems, setCheckedItems] = useState<Set<number>>(new Set());
@@ -289,16 +301,47 @@ export function MeetingPrepView({
           ) : (
             <span />
           )}
-          <button
-            type="button"
-            onClick={() => refresh(context)}
-            disabled={generating}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-xs font-medium text-white hover:bg-sky-600 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={11} className={generating ? "animate-spin" : ""} />
-            {generating ? "Generating…" : hasContent || hasLegacyContent ? "Regenerate" : "Generate"}
-          </button>
+          <div className="flex items-center gap-2">
+            {savedHint && (
+              <span className="text-[11px] text-emerald-600">Saved to timeline. Summarized.</span>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                const trimmed = context.trim();
+                if (!trimmed) return;
+                saveContext(
+                  { content: trimmed },
+                  {
+                    onSuccess: () => {
+                      setContext("");
+                      setSavedHint(true);
+                      setTimeout(() => setSavedHint(false), 3000);
+                    },
+                  },
+                );
+              }}
+              disabled={saving || generating || !context.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-4 py-2 text-xs font-medium text-white hover:bg-slate-800 disabled:opacity-40 transition-colors"
+              title={context.trim() ? "Save context to timeline and summarize" : "Type context above to enable"}
+            >
+              {saving ? "Saving…" : "Save to Timeline"}
+            </button>
+            <button
+              type="button"
+              onClick={() => refresh("")}
+              disabled={generating || saving || !!context.trim()}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-sky-500 px-4 py-2 text-xs font-medium text-white hover:bg-sky-600 disabled:opacity-40 transition-colors"
+              title={context.trim() ? "Save context first before regenerating" : "Regenerate meeting prep from latest timeline data"}
+            >
+              <RefreshCw size={11} className={generating ? "animate-spin" : ""} />
+              {generating ? "Generating…" : hasContent || hasLegacyContent ? "Regenerate" : "Generate"}
+            </button>
+          </div>
         </div>
+        <p className="text-[10px] text-slate-400">
+          Save context to the timeline first so it is summarized, then click Regenerate to rebuild the prep.
+        </p>
       </div>
 
       {isLoading && (
@@ -325,6 +368,93 @@ export function MeetingPrepView({
 
       {!isLoading && hasContent && (
         <div className="space-y-2">
+          {actionItems.length > 0 && (
+            <PrepSection
+              title="Open Action Items"
+              icon={<CheckSquare size={12} className="text-slate-400" />}
+              count={actionItems.length}
+              defaultOpen
+            >
+              <ul className="space-y-2">
+                {actionItems.map((a, i) => (
+                  <li key={i}>
+                    <div
+                      className="flex items-start gap-2 cursor-pointer group"
+                      onClick={() => toggleCheck(i)}
+                    >
+                      {checkedItems.has(i) ? (
+                        <CheckSquare size={14} className="text-sky-500 shrink-0 mt-0.5" />
+                      ) : (
+                        <Square size={14} className="text-slate-300 shrink-0 mt-0.5 group-hover:text-slate-400" />
+                      )}
+                      <div className="flex-1">
+                        <span
+                          className={`text-sm ${checkedItems.has(i) ? "line-through text-slate-400" : "text-slate-700"}`}
+                        >
+                          {a.item}
+                        </span>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          {a.source && (
+                            <span className="text-[10px] text-slate-400">{a.source}</span>
+                          )}
+                          {a.owner && (
+                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
+                              a.owner === "SE" ? "bg-sky-50 text-sky-600" : a.owner === "customer" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"
+                            }`}>
+                              {a.owner}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </PrepSection>
+          )}
+
+          {topicsWithLinks.length > 0 && (
+            <PrepSection
+              title="Suggested Topics"
+              icon={<Sparkles size={12} className="text-slate-400" />}
+              count={topicsWithLinks.length}
+              defaultOpen
+            >
+              <div className="space-y-3">
+                {highPriorityTopics.length > 0 && (
+                  <div className="space-y-2">
+                    {highPriorityTopics.map((t, i) => (
+                      <div key={i} className="rounded-md border border-red-50 bg-red-50/30 p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <PriorityBadge priority={t.priority} />
+                          <EvidenceTag source={t.evidence_source} />
+                        </div>
+                        <p className="text-sm font-medium text-slate-700 mb-1">{t.topic}</p>
+                        <p className="text-xs text-slate-500">{t.justification}</p>
+                        <DocLinkPills links={t.doc_links} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {mediumPriorityTopics.length > 0 && (
+                  <div className="space-y-2">
+                    {mediumPriorityTopics.map((t, i) => (
+                      <div key={i} className="rounded-md border border-slate-100 bg-slate-50/50 p-3">
+                        <div className="flex items-center gap-2 mb-1">
+                          <PriorityBadge priority={t.priority} />
+                          <EvidenceTag source={t.evidence_source} />
+                        </div>
+                        <p className="text-sm font-medium text-slate-700 mb-1">{t.topic}</p>
+                        <p className="text-xs text-slate-500">{t.justification}</p>
+                        <DocLinkPills links={t.doc_links} />
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </PrepSection>
+          )}
+
           {recaps.length > 0 && (
             <PrepSection
               title="Recent Meetings"
@@ -382,48 +512,6 @@ export function MeetingPrepView({
             </PrepSection>
           )}
 
-          {topicsWithLinks.length > 0 && (
-            <PrepSection
-              title="Suggested Topics"
-              icon={<Sparkles size={12} className="text-slate-400" />}
-              count={topicsWithLinks.length}
-              defaultOpen
-            >
-              <div className="space-y-3">
-                {highPriorityTopics.length > 0 && (
-                  <div className="space-y-2">
-                    {highPriorityTopics.map((t, i) => (
-                      <div key={i} className="rounded-md border border-red-50 bg-red-50/30 p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <PriorityBadge priority={t.priority} />
-                          <EvidenceTag source={t.evidence_source} />
-                        </div>
-                        <p className="text-sm font-medium text-slate-700 mb-1">{t.topic}</p>
-                        <p className="text-xs text-slate-500">{t.justification}</p>
-                        <DocLinkPills links={t.doc_links} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {mediumPriorityTopics.length > 0 && (
-                  <div className="space-y-2">
-                    {mediumPriorityTopics.map((t, i) => (
-                      <div key={i} className="rounded-md border border-slate-100 bg-slate-50/50 p-3">
-                        <div className="flex items-center gap-2 mb-1">
-                          <PriorityBadge priority={t.priority} />
-                          <EvidenceTag source={t.evidence_source} />
-                        </div>
-                        <p className="text-sm font-medium text-slate-700 mb-1">{t.topic}</p>
-                        <p className="text-xs text-slate-500">{t.justification}</p>
-                        <DocLinkPills links={t.doc_links} />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </PrepSection>
-          )}
-
           {signalsWithLinks.length > 0 && (
             <PrepSection
               title="Feature Usage Signals"
@@ -456,6 +544,7 @@ export function MeetingPrepView({
               title="Suggested Assets to Build"
               icon={<FileText size={12} className="text-slate-400" />}
               count={suggestedAssets.length}
+              defaultOpen={false}
             >
               <div className="grid gap-2">
                 {suggestedAssets.map((a, i) => (
@@ -480,51 +569,6 @@ export function MeetingPrepView({
                   </div>
                 ))}
               </div>
-            </PrepSection>
-          )}
-
-          {actionItems.length > 0 && (
-            <PrepSection
-              title="Open Action Items"
-              icon={<CheckSquare size={12} className="text-slate-400" />}
-              count={actionItems.length}
-              defaultOpen
-            >
-              <ul className="space-y-2">
-                {actionItems.map((a, i) => (
-                  <li key={i}>
-                    <div
-                      className="flex items-start gap-2 cursor-pointer group"
-                      onClick={() => toggleCheck(i)}
-                    >
-                      {checkedItems.has(i) ? (
-                        <CheckSquare size={14} className="text-sky-500 shrink-0 mt-0.5" />
-                      ) : (
-                        <Square size={14} className="text-slate-300 shrink-0 mt-0.5 group-hover:text-slate-400" />
-                      )}
-                      <div className="flex-1">
-                        <span
-                          className={`text-sm ${checkedItems.has(i) ? "line-through text-slate-400" : "text-slate-700"}`}
-                        >
-                          {a.item}
-                        </span>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {a.source && (
-                            <span className="text-[10px] text-slate-400">{a.source}</span>
-                          )}
-                          {a.owner && (
-                            <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${
-                              a.owner === "SE" ? "bg-sky-50 text-sky-600" : a.owner === "customer" ? "bg-amber-50 text-amber-600" : "bg-slate-100 text-slate-500"
-                            }`}>
-                              {a.owner}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
             </PrepSection>
           )}
 
