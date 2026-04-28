@@ -21,22 +21,30 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 _SNOWHOUSE_HOST = "sfcogsops-snowhouse-aws-us-west-2.snowflakecomputing.com"
 _AGENT_RUN_URL = f"https://{_SNOWHOUSE_HOST}/api/v2/cortex/agent:run"
-_ORCHESTRATION_MODEL = "llama3.1-70b"
+_ORCHESTRATION_MODEL = "auto"
 
 _TOOLS = [
     {"tool_spec": {"name": "BookManager_Data_Assistant", "type": "cortex_analyst_text_to_sql"}},
     {"tool_spec": {"name": "Sales_Knowledge_Assistant", "type": "cortex_search"}},
+    {"tool_spec": {"name": "Snowflake_Docs_Assistant", "type": "cortex_search"}},
 ]
 
 _TOOL_RESOURCES = {
     "BookManager_Data_Assistant": {
-        "semantic_model_file": "@TEMP.JUSDAVIS.BKMNG_STAGE/bookmanager_assistant.yaml"
+        "semantic_model_file": "@TEMP.JUSDAVIS.BKMNG_STAGE/bookmanager_assistant.yaml",
+        "execution_environment": {"type": "warehouse", "warehouse": "SE_XS_WH"},
     },
     "Sales_Knowledge_Assistant": {
         "name": "SALES.KNOWLEDGE_ASSISTANT.FILE_SEARCH_SERVICE_PAGENUM_PROD",
         "Max_results": "5",
         "Title_column": "SEISMIC_LINK",
         "ID_column": "SEISMIC_LINK",
+    },
+    "Snowflake_Docs_Assistant": {
+        "name": "CORTEX_KNOWLEDGE_EXTENSION_SNOWFLAKE_DOCUMENTATION.SHARED.CKE_SNOWFLAKE_DOCS_SERVICE",
+        "Max_results": "5",
+        "Title_column": "SOURCE_URL",
+        "ID_column": "SOURCE_URL",
     },
 }
 
@@ -64,7 +72,7 @@ def _build_auth_headers() -> dict[str, str]:
     if not pat:
         raise RuntimeError("SNOWFLAKE_PAT not configured")
     return {
-        "Authorization": f'Snowflake Token="{pat}"',
+        "Authorization": f"Bearer {pat}",
         "X-Snowflake-Authorization-Token-Type": "PROGRAMMATIC_ACCESS_TOKEN",
         "Content-Type": "application/json",
         "Accept": "text/event-stream",
@@ -74,6 +82,8 @@ def _build_auth_headers() -> dict[str, str]:
 def _build_agent_body(
     messages: list[dict],
     system_context: str,
+    account_id: Optional[str] = None,
+    account_name: Optional[str] = None,
 ) -> dict:
     api_messages = []
     for m in messages:
@@ -84,30 +94,55 @@ def _build_agent_body(
             "content": [{"type": "text", "text": m.get("content", "")}],
         })
 
+    scoped = bool(account_id and account_name)
+    system_instr = (
+        "You are ACE — the Account Consumption Engineer. You are an expert Snowflake field SE "
+        "for this customer, with deep knowledge of their consumption, use cases, people, "
+        "signals, and history. Respond like a veteran SE: concrete numbers, named people, "
+        "specific dates. No fluff. Use markdown. When you cite search results, include the source link."
+    )
+    if scoped:
+        system_instr = (
+            f"You are ACE — the Account Consumption Engineer for {account_name}. "
+            f"You live and breathe this account. You know its consumption, use cases, champions, "
+            f"signals, competitive situation, and history. When you answer, answer like a veteran SE "
+            f"who owns this account: concrete numbers, named people, specific dates, next best actions. "
+            f"No fluff. Use markdown. Cite sources with inline links when using search results."
+        )
+
+    orchestration_instr = (
+        "Tool selection rules:\n"
+        "- BookManager_Data_Assistant: specific-account data, use cases, signals, consumption, "
+        "MEDDPICC, revenue, go-live dates, forecasts — anything from BookManager tables.\n"
+        "- Snowflake_Docs_Assistant: Snowflake product docs, feature how-to, SQL syntax, API references.\n"
+        "- Sales_Knowledge_Assistant: Seismic content, sales plays, competitive intel, pitch materials."
+    )
+    if scoped:
+        orchestration_instr = (
+            f"CURRENT SCOPE: User is viewing the account '{account_name}' (ACCOUNT_ID='{account_id}').\n"
+            f"DEFAULT SCOPE RULE: Filter every BookManager_Data_Assistant query to ACCOUNT_ID = '{account_id}'. "
+            f"Interpret pronouns (\"this account\", \"they\", \"them\", \"the customer\") as {account_name}. "
+            f"ONLY drop the account filter when the user's intent is unambiguously global — explicit phrases "
+            f"like \"across my book\", \"all accounts\", \"compare accounts\", \"how many accounts\", "
+            f"or naming a different account. Never invent other accounts' data.\n\n"
+            "Tool selection rules:\n"
+            "- BookManager_Data_Assistant: account-specific data (scoped above), use cases, signals, "
+            "consumption, MEDDPICC, revenue, go-live dates.\n"
+            "- Snowflake_Docs_Assistant: Snowflake product docs, features, SQL syntax, how-to, APIs. NOT account-scoped.\n"
+            "- Sales_Knowledge_Assistant: Seismic content, sales plays, competitive intel. NOT account-scoped."
+        )
+
     return {
         "messages": api_messages,
         "models": {"orchestration": _ORCHESTRATION_MODEL},
         "instructions": {
-            "system": (
-                "You are ACE, an AI assistant for Snowflake field sales engineers. "
-                "You help with account management, use case tracking, consumption analysis, "
-                "signals, competitive intel, documentation, and drafting communications. "
-                "Be concise and actionable. Use markdown for formatting. "
-                "When you cite search results, include the source link."
-            ),
+            "system": system_instr,
             "response": (
-                "Respond concisely using markdown. Cite sources with inline links. "
-                "For data questions, reference the SQL results. "
+                "Respond concisely using markdown. Lead with the answer. Cite sources with inline links. "
+                "For data questions, reference the SQL results with real numbers. "
                 "For knowledge questions, reference the document source."
             ),
-            "orchestration": (
-                "Use BookManager_Data_Assistant for questions about specific accounts, "
-                "use cases, signals, consumption, MEDDPICC, revenue, go-live dates, "
-                "forecasts, and any structured data from the BookManager system. "
-                "Use Sales_Knowledge_Assistant for Snowflake product knowledge, "
-                "documentation, competitive intelligence, sales methodology, "
-                "feature capabilities, and general Snowflake questions."
-            ),
+            "orchestration": orchestration_instr,
         },
         "orchestration": {
             "budget": {"seconds": 60, "tokens": 16000},
@@ -137,7 +172,14 @@ async def _stream_agent_run(
     except Exception:
         system_context = "BookManager context unavailable."
 
-    body = _build_agent_body(messages, system_context)
+    account_name: Optional[str] = None
+    if account_id:
+        try:
+            account_name = data.get_account_name(account_id)
+        except Exception:
+            account_name = None
+
+    body = _build_agent_body(messages, system_context, account_id=account_id, account_name=account_name)
     if system_context:
         body["messages"].insert(0, {
             "role": "user",
@@ -147,6 +189,16 @@ async def _stream_agent_run(
             "role": "assistant",
             "content": [{"type": "text", "text": "Understood. I have the account context loaded. How can I help?"}],
         })
+
+    if account_id and account_name and body["messages"]:
+        for i in range(len(body["messages"]) - 1, -1, -1):
+            if body["messages"][i]["role"] == "user":
+                orig = body["messages"][i]["content"][0]["text"]
+                if not orig.startswith("[Context:") and not orig.startswith("[System context"):
+                    body["messages"][i]["content"][0]["text"] = (
+                        f"[Context: on {account_name} account page — scope to ACCOUNT_ID='{account_id}' unless question is unambiguously book-wide]\n{orig}"
+                    )
+                break
 
     headers = _build_auth_headers()
 
@@ -207,6 +259,22 @@ async def _stream_agent_run(
                                         }
                                     }
                                     yield f"data: {json.dumps(link_data)}\n\n"
+                            except json.JSONDecodeError:
+                                pass
+
+                        elif current_event == "response.tool_result":
+                            try:
+                                payload = json.loads(raw_data)
+                                tr = payload.get("tool_result") or payload
+                                content = tr.get("content") or []
+                                for item in content:
+                                    j = item.get("json") if isinstance(item, dict) else None
+                                    if not isinstance(j, dict):
+                                        continue
+                                    sql_text = j.get("sql") or j.get("generated_sql")
+                                    if sql_text:
+                                        yield f"data: {json.dumps({'sql': sql_text, 'verified': bool(j.get('verified_query_used'))})}\n\n"
+                                        break
                             except json.JSONDecodeError:
                                 pass
 

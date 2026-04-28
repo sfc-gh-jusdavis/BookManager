@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from app.signals.provider import SignalProvider
 from app.signals.models import Signal, SignalScope
 
@@ -26,11 +28,13 @@ _TYPE_TO_CATEGORY: dict[str, str] = {
     "meeting_momentum":     "engagement",
     "email_silence":        "engagement",
     "email_declining":      "engagement",
-    # Paused (kept for reactivation)
+    # Champion
     "champion_silent":      "engagement",
     "competitor_mentioned": "engagement",
     "stage_stalled":        "use_case",
-    # Removed: high_momentum, new_stakeholder, contract_ending (medium)
+    # Security
+    "security_gap_critical": "security",
+    "security_gap_high":     "security",
     # User context signals (SOURCE='user_context')
     "customer_frustration":   "engagement",
     "user_reported_risk":     "use_case",
@@ -38,12 +42,19 @@ _TYPE_TO_CATEGORY: dict[str, str] = {
     "user_reported_opportunity": "engagement",
 }
 
+_TYPE_TO_LANE: dict[str, str] = {
+    "use_case_no_go_live":    "admin",
+    "use_case_no_impl_start": "admin",
+    "use_case_stale_notes":   "admin",
+    "no_upcoming_meeting":    "admin",
+}
+
 
 class CoreProvider(SignalProvider):
     name = "core"
 
     def collect(self, cur, scope: SignalScope) -> list[Signal]:
-        where_parts = ["s.SOURCE = 'core'"]
+        where_parts = ["s.SOURCE IN ('core', 'security_posture')"]
         params: list = []
 
         if scope.ace_filter:
@@ -88,6 +99,12 @@ class CoreProvider(SignalProvider):
         results: list[Signal] = []
         for row in cur.fetchall():
             sig_type = row.get("SIGNAL_TYPE", "")
+            raw_meta = row.get("METADATA")
+            if isinstance(raw_meta, str):
+                try:
+                    raw_meta = json.loads(raw_meta)
+                except Exception:
+                    raw_meta = {}
             results.append(
                 Signal(
                     id=row.get("SIGNAL_ID", ""),
@@ -99,9 +116,10 @@ class CoreProvider(SignalProvider):
                     text=row.get("SIGNAL_TEXT", ""),
                     summary=row.get("CONTEXT", ""),
                     source="core",
-                    metadata=row.get("METADATA") or {},
+                    metadata=raw_meta or {},
                     alert_eligible=bool(row.get("ALERT_ELIGIBLE", False)),
                     created_at=row.get("CREATED_AT"),
+                    lane=_TYPE_TO_LANE.get(sig_type, "client"),
                 )
             )
         return results

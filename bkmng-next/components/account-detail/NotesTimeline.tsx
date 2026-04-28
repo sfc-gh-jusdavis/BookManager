@@ -240,7 +240,7 @@ export function NotesTimeline({ accountId, gongCalls, onDelete }: NotesTimelineP
               }
 
               const call = event.data;
-              const gongUrl = `https://us-60424.app.gong.io/call?id=${call.call_id}`;
+              const gongUrl = call.recording_url ?? null;
               return (
                 <div key={`call-${call.call_id}`} className="relative pb-4 pl-8 last:pb-0">
                   <span
@@ -265,14 +265,20 @@ export function NotesTimeline({ accountId, gongCalls, onDelete }: NotesTimelineP
                     </svg>
                   </span>
                   <div className="rounded-md border border-violet-100 bg-violet-50/50 px-3 py-2">
-                    <a
-                      href={gongUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-sm font-medium text-slate-800 hover:text-violet-700 hover:underline"
-                    >
-                      {call.title ?? "Gong Call"}
-                    </a>
+                    {gongUrl ? (
+                      <a
+                        href={gongUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-slate-800 hover:text-violet-700 hover:underline"
+                      >
+                        {call.title ?? "Gong Call"}
+                      </a>
+                    ) : (
+                      <span className="text-sm font-medium text-slate-800">
+                        {call.title ?? "Gong Call"}
+                      </span>
+                    )}
                     {call.summary && (
                       <p className="mt-1 text-xs text-slate-600 leading-relaxed">
                         {call.summary}

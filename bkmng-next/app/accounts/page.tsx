@@ -4,24 +4,10 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import { ArrowUp, ArrowDown, ChevronRight, ChevronDown, Search, X, Plus, AlertTriangle, Zap, CalendarCheck2, Mail, TrendingDown, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
-import { useAccounts, useUseCases, useAceDisplayNames, useAccountRevenueSummaries, useSignalCounts, useRefreshBook, type SignalCountEntry } from "@/hooks/useApi";
-import type { RevenueSummary } from "@/hooks/useApi";
+import { useAccounts, useUseCases, useAceDisplayNames, useAccountRevenueSummaries, useSignalCounts, useRefreshBook, type SignalCountEntry, type Account, type RevenueSummary } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type PSNote = { note_id: string; content: string; created_at: string; author_id: string };
-
-type Account = {
-  account_id: string; account_name: string; status: string;
-  engagement_status: string; industry: string; ace_assigned: string;
-  collaborators: string[]; total_credits_allocated: number; use_case_count: number;
-  consumption_ytd?: number;
-  new_adoption_30d?: string;
-  sig_pipeline?: number; sig_aiml?: number; health_score?: number;
-  momentum?: string; wow_pct_change?: number;
-  meetings_last_30d: number; upcoming_meetings_5d: number;
-  last_meeting_date?: string | null; emails_last_30d: number;
-  last_email_date?: string | null; email_trend?: string | null;
-};
 
 type UseCase = {
   use_case_id: string; account_id: string; use_case_name: string;
@@ -319,7 +305,7 @@ export default function AccountsPage() {
 
   const roleScoped = useMemo(() => accounts as Account[], [accounts]);
 
-  const industries = useMemo(() => ["All", ...new Set(roleScoped.map((a) => a.industry).filter(Boolean)).values()].sort(), [roleScoped]);
+  const industries = useMemo(() => ["All", ...new Set(roleScoped.map((a) => a.industry).filter((x): x is string => !!x)).values()].sort(), [roleScoped]);
   const aces = useMemo(() => {
     const ids = [...new Set(roleScoped.map((a) => a.ace_assigned))].sort();
     return [{ id: "All", label: "All" }, ...ids.map((id) => ({ id, label: (aceDisplayNames as Record<string, string>)[id] ?? id }))];

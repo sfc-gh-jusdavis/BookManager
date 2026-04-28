@@ -54,3 +54,7 @@ coverage/
 # Plan files at root (keep in docs/plans/ instead)
 /*.plan.md
 !/docs/plans/*.plan.md
+
+# Archived artifacts — tracked but never read by tooling
+# (kept in repo for reference; Docker excludes via .dockerignore)
+

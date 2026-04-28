@@ -7,9 +7,11 @@ class AccountTracking(BaseModel):
     account_name: Optional[str] = None
     tracking_status: Literal["following", "archived"]
     notes: Optional[str] = None
+    notes_doc_url: Optional[str] = None
     updated_at: Optional[str] = None
 
 
 class SetTrackingRequest(BaseModel):
     status: Literal["following", "archived"]
     notes: Optional[str] = None
+    notes_doc_url: Optional[str] = None

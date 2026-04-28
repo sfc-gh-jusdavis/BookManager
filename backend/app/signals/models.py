@@ -28,6 +28,7 @@ class Signal(BaseModel):
     metadata: dict = field(default_factory=dict)
     alert_eligible: bool = False
     created_at: Optional[datetime] = None
+    lane: Literal["client", "admin"] = "client"
 
     class Config:
         arbitrary_types_allowed = True

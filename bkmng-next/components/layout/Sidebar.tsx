@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Bell,
   Settings,
+  GanttChart,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
   { href: "/accounts", label: "Accounts", icon: <Building2 size={16} /> },
   { href: "/forecasts", label: "Forecasts", icon: <TrendingUp size={16} /> },
+  { href: "/timeline", label: "Timeline", icon: <GanttChart size={16} /> },
   { href: "/tmrs", label: "TMRs", icon: <ClipboardList size={16} /> },
   { href: "/team", label: "Team", icon: <Users size={16} /> },
   { href: "/ace", label: "Ask ACE", icon: <Sparkles size={16} /> },

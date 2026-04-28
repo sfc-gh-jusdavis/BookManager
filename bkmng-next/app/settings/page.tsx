@@ -13,7 +13,7 @@ import {
 } from "@/hooks/useApi";
 
 type Tab = "ace" | "alerts";
-type AlertSubTab = "use_cases" | "engagement" | "consumption" | "support" | "intelligence";
+type AlertSubTab = "use_cases" | "engagement" | "consumption" | "support" | "security" | "intelligence";
 
 const PRIORITY_OPTIONS = ["high", "medium", "low"] as const;
 
@@ -311,6 +311,7 @@ const SUB_TABS: { id: AlertSubTab; label: string; category: string | null }[] = 
   { id: "engagement",   label: "Engagement",   category: "engagement" },
   { id: "consumption",  label: "Consumption",  category: "consumption" },
   { id: "support",      label: "Support",      category: "support" },
+  { id: "security",     label: "Security",     category: "security" },
   { id: "intelligence", label: "Intelligence", category: null },
 ];
 

@@ -27,6 +27,8 @@ class AccountFeatureUsage(BaseModel):
 
 class AccountRevenueSummary(BaseModel):
     account_id: str
+    net_acv: Optional[float] = None
+    net_tcv: Optional[float] = None
     contract_capacity: Optional[float] = None
     total_consumed_revenue: Optional[float] = None
     capacity_remaining: Optional[float] = None

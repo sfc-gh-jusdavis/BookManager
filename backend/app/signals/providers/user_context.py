@@ -49,8 +49,8 @@ class UserContextProvider(SignalProvider):
 
         for row in rows:
             ctx_id = str(row.get("CONTEXT_ID", ""))
-            account_id = row.get("ACCOUNT_ID", "")
-            account_name = row.get("ACCOUNT_NAME", "")
+            account_id = row.get("ACCOUNT_ID") or ""
+            account_name = row.get("ACCOUNT_NAME") or ""
             summary = row.get("PARSED_SUMMARY", "")
             sentiment = (row.get("SENTIMENT") or "").lower()
             created_at = row.get("CREATED_AT")
@@ -83,6 +83,7 @@ class UserContextProvider(SignalProvider):
                         source="user_context",
                         metadata={"context_id": ctx_id, "sentiment": sentiment},
                         alert_eligible=True,
+                        lane="client",
                         created_at=created_at,
                     )
                 )
@@ -103,6 +104,7 @@ class UserContextProvider(SignalProvider):
                         source="user_context",
                         metadata={"context_id": ctx_id, "risks": high_risks},
                         alert_eligible=True,
+                        lane="client",
                         created_at=created_at,
                     )
                 )
@@ -122,6 +124,7 @@ class UserContextProvider(SignalProvider):
                         source="user_context",
                         metadata={"context_id": ctx_id, "competitors": competitors},
                         alert_eligible=False,
+                        lane="client",
                         created_at=created_at,
                     )
                 )
@@ -141,6 +144,7 @@ class UserContextProvider(SignalProvider):
                         source="user_context",
                         metadata={"context_id": ctx_id, "blockers": blockers},
                         alert_eligible=True,
+                        lane="client",
                         created_at=created_at,
                     )
                 )
@@ -163,6 +167,7 @@ class UserContextProvider(SignalProvider):
                         source="user_context",
                         metadata={"context_id": ctx_id, "opportunities": opportunities},
                         alert_eligible=False,
+                        lane="client",
                         created_at=created_at,
                     )
                 )

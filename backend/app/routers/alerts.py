@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
@@ -37,16 +37,21 @@ class MuteAlertRequest(BaseModel):
 async def get_alerts(
     user: CurrentUser = Depends(get_current_user),
     data: SnowflakeDataService = Depends(get_data_service),
+    account_id: Optional[str] = Query(default=None),
 ) -> list[AlertItem]:
     cur = data._cursor()
+    account_filter = "AND ua.ACCOUNT_ID = %s" if account_id else ""
+    params: tuple = (user.email, account_id) if account_id else (user.email,)
     cur.execute(
-        """
+        f"""
         SELECT ALERT_ID, USER_EMAIL, SIGNAL_ID, SIGNAL_TYPE, ACCOUNT_ID,
                ACCOUNT_NAME, TEXT, PRIORITY, SOURCE, IS_READ, IS_DISMISSED,
                CREATED_AT::VARCHAR AS CREATED_AT
         FROM BKMNG_USER_ALERTS ua
         WHERE ua.USER_EMAIL = %s
+          {account_filter}
           AND ua.IS_DISMISSED = FALSE
+          AND (ua.IS_READ = FALSE OR ua.CREATED_AT >= DATEADD('day', -14, CURRENT_TIMESTAMP()))
           AND NOT EXISTS (
               SELECT 1 FROM BKMNG_ALERT_MUTES m
               WHERE m.USER_EMAIL = ua.USER_EMAIL
@@ -63,9 +68,9 @@ async def get_alerts(
         ORDER BY
             CASE PRIORITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
             CREATED_AT DESC
-        LIMIT 50
+        LIMIT 1000
         """,
-        (user.email,),
+        params,
     )
     rows = cur.fetchall()
     return [
@@ -118,6 +123,19 @@ async def get_alert_count(
     )
     row = cur.fetchone() or {}
     return {"count": int(row.get("CNT", 0) or 0)}
+
+
+@router.post("/mark-all-read")
+async def mark_all_alerts_read(
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict[str, int]:
+    cur = data._cursor()
+    cur.execute(
+        "UPDATE BKMNG_USER_ALERTS SET IS_READ = TRUE WHERE USER_EMAIL = %s AND IS_READ = FALSE AND IS_DISMISSED = FALSE",
+        (user.email,),
+    )
+    return {"updated": cur.rowcount if cur.rowcount is not None else 0}
 
 
 @router.post("/{alert_id}/read")
