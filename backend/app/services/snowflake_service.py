@@ -4,13 +4,9 @@ import html
 import json
 import logging
 import re
-import calendar
+from datetime import date, datetime
 from typing import Optional
 
-logger = logging.getLogger(__name__)
-from datetime import date, datetime, timedelta
-
-import snowflake.connector
 from snowflake.connector import DictCursor
 
 from app.db.connection import get_snowflake_connection
@@ -18,15 +14,15 @@ from app.cache import cache_get, cache_set, cache_invalidate_prefix
 from app.models.account import Account, UseCase, PSNote, AccountResource, MeetingActivity, EmailActivity, ManualMeeting
 from app.models.credit import CreditConsumption, AccountFeatureUsage, AccountRevenueSummary
 from app.models.gong import GongCall
-from app.models.nba import NBAItem
 from app.models.tmr import TMR
 from app.models.prediction import (
     CreditForecast,
     UseCaseCompletionPrediction,
-    TMRSuccessPrediction,
     SimilarDeployment,
     UseCaseForecast,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def _clean_gong_text(raw: str) -> str:
@@ -422,7 +418,7 @@ class SnowflakeDataService:
     ) -> list[dict]:
         cur = self._cursor()
         params: list = []
-        where_parts = [f"b.SPLITTABILITY_SCORE >= %s"]
+        where_parts = ["b.SPLITTABILITY_SCORE >= %s"]
         params.append(min_score)
         if account_id:
             where_parts.append("b.ACCOUNT_ID = %s")
@@ -1208,9 +1204,7 @@ Be specific. Reference actual data above. Return only JSON."""
         if not row:
             return None
         r = {k.lower(): v for k, v in dict(row).items()}
-        from datetime import timezone
         if r.get("generated_at"):
-            from datetime import timedelta
             age_hours = (
                 __import__("datetime").datetime.now(__import__("datetime").timezone.utc)
                 - r["generated_at"].replace(tzinfo=__import__("datetime").timezone.utc)
@@ -1590,7 +1584,7 @@ RULES:
                 raw = cached.get("MEETING_RECAPS") or cached.get("meeting_recaps")
                 if isinstance(raw, str):
                     try:
-                        suggested_topics = json.loads(raw)
+                        suggested_topics = json.loads(raw)  # noqa: F841 (reserved for future use)
                     except Exception:
                         pass
 
@@ -2832,10 +2826,14 @@ Respond with ONLY this JSON:
                         acv = cr2.get("NET_ACV")
                         d_end = cr2.get("DAYS_UNTIL_CONTRACT_END")
                         pieces = []
-                        if spend is not None: pieces.append(f"Contract spend to-date: ${float(spend):,.0f}")
-                        if acv is not None: pieces.append(f"NET ACV: ${float(acv):,.0f}")
-                        if rev30 is not None: pieces.append(f"Rev 30d: ${float(rev30):,.0f}")
-                        if d_end is not None: pieces.append(f"Days to renewal: {d_end}")
+                        if spend is not None:
+                            pieces.append(f"Contract spend to-date: ${float(spend):,.0f}")
+                        if acv is not None:
+                            pieces.append(f"NET ACV: ${float(acv):,.0f}")
+                        if rev30 is not None:
+                            pieces.append(f"Rev 30d: ${float(rev30):,.0f}")
+                        if d_end is not None:
+                            pieces.append(f"Days to renewal: {d_end}")
                         if pieces:
                             account_section += "CONTRACT SPEND: " + " | ".join(pieces) + "\n"
                 except Exception:

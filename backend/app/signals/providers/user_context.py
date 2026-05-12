@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import uuid
 
 from app.signals.provider import SignalProvider
 from app.signals.models import Signal, SignalScope
