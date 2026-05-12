@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 
 from app.config import settings
-from app.routers import accounts, auth, forecasts, tmr, misc, credit_series, admin, agent, nba, alerts, assessments, user
+from app.routers import accounts, auth, forecasts, tmr, misc, credit_series, admin, agent, nba, alerts, assessments, user, feature_flags
 
 app = FastAPI(
     title="BookManager API",
@@ -35,6 +35,7 @@ app.include_router(nba.router)
 app.include_router(alerts.router)
 app.include_router(assessments.router)
 app.include_router(user.router)
+app.include_router(feature_flags.router)
 
 
 @app.get("/health")
