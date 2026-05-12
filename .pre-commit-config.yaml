@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: validate-feature-flags
+        name: Validate feature flags
+        entry: python3 scripts/validate_flags.py
+        language: system
+        files: '\.(tsx?|py)$'
+        pass_filenames: false
