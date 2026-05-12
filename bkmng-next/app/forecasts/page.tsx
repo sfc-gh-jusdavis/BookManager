@@ -11,6 +11,7 @@ import { useAccounts, useUseCases, useForecasts, useConsumptionProjection, useAc
 import type { AccountConsumptionProjection, AccountAssessment, UseCaseAssessment, BreakdownSummary } from "@/hooks/useApi";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type Forecast = {
   use_case_id: string; account_id: string; quarter: string;
@@ -124,7 +125,7 @@ function KPIBucket({ label, count, icon, colorClass, sublabel, valueSuffix }: {
   );
 }
 
-export default function ForecastsPage() {
+function ForecastsPage() {
   const { currentUser } = useAuth();
   const isManager = currentUser?.role === "acem";
 
@@ -562,3 +563,5 @@ export default function ForecastsPage() {
     </div>
   );
 }
+
+export default withFlagGate(ForecastsPage, "page_forecasts");

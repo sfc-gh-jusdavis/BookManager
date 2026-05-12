@@ -13,8 +13,8 @@ import { PRIORITY_COLORS, PRIORITY_LABEL } from "@/components/alerts/AlertRow";
 import {
   useAccounts, useUseCases, useGongCalls, useNBA, useSituations,
   useRecentAdoptions, useAlerts, useAlertCount,
-  useMarkAlertRead, useDismissAlert,
-  type GongCall, type NBAItem, type NBAResponse, type FeatureAdoption, type AlertItem, type CompositePattern,
+  useMarkAlertRead, useDismissAlert, useAllUpcomingMeetings,
+  type GongCall, type NBAItem, type NBAResponse, type FeatureAdoption, type AlertItem, type CompositePattern, type UpcomingMeeting,
 } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
@@ -267,6 +267,7 @@ export function ACEDashboard() {
   const { data: alertCount } = useAlertCount() as { data: { count: number } | undefined };
   const { mutate: markRead } = useMarkAlertRead();
   const { mutate: dismiss } = useDismissAlert();
+  const { data: allUpcomingMeetings = [] } = useAllUpcomingMeetings(10) as { data: UpcomingMeeting[] };
 
   const myAccounts = useMemo(() => allAccounts as Account[], [allAccounts]);
   const myAccountIds = useMemo(() => new Set(myAccounts.map((a) => a.account_id)), [myAccounts]);
@@ -313,13 +314,6 @@ export function ACEDashboard() {
     [clientItems]
   );
 
-  const upcomingMeetingAccounts = useMemo(
-    () => myAccounts
-      .filter((a) => (a.upcoming_meetings_5d ?? 0) > 0)
-      .sort((a, b) => (b.upcoming_meetings_5d ?? 0) - (a.upcoming_meetings_5d ?? 0))
-      .slice(0, 4),
-    [myAccounts]
-  );
 
   const hygieneUseCases = useMemo(
     () => myUseCases.filter((uc) => !isTerminalStage(uc.stage)),
@@ -654,20 +648,27 @@ export function ACEDashboard() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {upcomingMeetingAccounts.length > 0 && (
+              {allUpcomingMeetings.length > 0 && (
                 <div>
-                  <SectionLabel>Upcoming Meetings (14d)</SectionLabel>
+                  <SectionLabel>Upcoming Meetings</SectionLabel>
                   <div className="space-y-1.5">
-                    {upcomingMeetingAccounts.map((acc) => (
-                      <Link key={acc.account_id} href={`/accounts/${acc.account_id}`}
+                    {allUpcomingMeetings.slice(0, 6).map((m) => (
+                      <Link key={m.meeting_id} href={`/accounts/${m.account_id}`}
                         className="flex items-center justify-between hover:bg-slate-50 -mx-1 px-1 rounded py-0.5 transition-colors">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <CalendarCheck2 size={10} className="text-emerald-500 shrink-0" />
-                          <p className="text-[11px] text-slate-700 truncate">{acc.account_name}</p>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] text-slate-700 truncate">{m.title ?? "(untitled)"}</p>
+                          <p className="text-[10px] text-sky-600 truncate">{m.account_name}</p>
                         </div>
-                        <span className="text-[10px] font-semibold text-emerald-600 shrink-0 ml-2">
-                          {acc.upcoming_meetings_5d}
-                        </span>
+                        <div className="text-right shrink-0 ml-2">
+                          <p className="text-[10px] font-medium text-emerald-600">
+                            {m.meeting_start ? new Date(m.meeting_start).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}
+                          </p>
+                          {m.meeting_start && (
+                            <p className="text-[9px] text-slate-400">
+                              {new Date(m.meeting_start).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}
+                            </p>
+                          )}
+                        </div>
                       </Link>
                     ))}
                   </div>
@@ -716,7 +717,7 @@ export function ACEDashboard() {
                 </div>
               )}
 
-              {upcomingGoLives.length === 0 && contractEndings.length === 0 && upcomingMeetingAccounts.length === 0 && (
+              {upcomingGoLives.length === 0 && contractEndings.length === 0 && allUpcomingMeetings.length === 0 && (
                 <p className="text-xs text-slate-400 py-1">Nothing scheduled soon.</p>
               )}
             </CardContent>

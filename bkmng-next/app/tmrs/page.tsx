@@ -6,6 +6,7 @@ import { Search, X, FileText, Clock, CheckCircle2, AlertTriangle, HelpCircle, Us
 import { useTMRs } from "@/hooks/useApi";
 import type { TMR } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -59,7 +60,7 @@ const STATUS_OPTIONS = [
   "Clarification Needed", "Closed",
 ];
 
-export default function TMRsPage() {
+function TMRsPage() {
   const { data: tmrs = [], isLoading } = useTMRs() as { data: TMR[]; isLoading: boolean };
 
   const [search, setSearch] = useState("");
@@ -205,3 +206,5 @@ export default function TMRsPage() {
     </div>
   );
 }
+
+export default withFlagGate(TMRsPage, "page_tmrs");

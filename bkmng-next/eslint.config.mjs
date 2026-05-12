@@ -13,9 +13,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
-  // Baseline relaxation for CI bring-up. These rules surface real issues that
-  // should be addressed incrementally. Tightened back to "error" once the
-  // relevant code is refactored. See chore/fix-ci-baseline.
+  // Baseline relaxation. These rules surface real React-compiler concerns in
+  // accounts/[id]/page.tsx, forecasts/page.tsx, settings/page.tsx, useApi.ts.
+  // Bucket 4 attempted to revert them; underlying issues persist.
+  // Tracked as tech debt; address when those files are next refactored.
   {
     rules: {
       "@typescript-eslint/no-explicit-any": "warn",
