@@ -46,8 +46,8 @@ Update this table as plans are executed.
 |------|--------|-----|---------------|
 | Plan 1: Repo Infrastructure | Done (repo public, classic branch protection on main with strict required checks) | #1, #2, #3 | 2026-05-12 |
 | Plan 2: Repo Cleanup (8 PRs) | Not started | — | — |
-| Plan 3: Daily Cadence | Not started | — | — |
-| Plan 4: AI-Dev Patterns Adoption | Not started | — | — |
+| Plan 3: Daily Cadence | Done (WORKFLOW.md at repo root, AGENTS.md Working Conventions, /start-feature command) | #5 | 2026-05-12 |
+| Plan 4: AI-Dev Patterns Adoption | Done (Patterns 5, 10, 11, 12, 13; /multi-review smoke-tested on PR #6) | #6 | 2026-05-12 |
 
 ## Topic Lookup
 
