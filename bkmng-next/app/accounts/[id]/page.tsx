@@ -16,21 +16,25 @@ import {
   useRefreshAccount,
   useAddTimelineContext, useDeleteTimelineContext,
   useAccountBreakdowns, useAccountAlerts, useMarkAlertRead, useDismissAlert,
-  useMuteAlert, useSecurityPosture,
+  useMuteAlert, useSecurityPosture, useAllUsers, useAIAdoption,
 } from "@/hooks/useApi";
-import type { GongCall, AccountAdoptionData, MeetingActivity, EmailActivity, ContextNote, AccountBriefing, UseCaseBreakdownItem, AlertItem } from "@/hooks/useApi";
+import type { GongCall, AccountAdoptionData, MeetingActivity, EmailActivity, ContextNote, AccountBriefing, UseCaseBreakdownItem, AlertItem, AIAdoptionData } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
 import { NotesTimeline } from "@/components/account-detail/NotesTimeline";
 import { AIChatPanel } from "@/components/account-detail/AIChatPanel";
 import { MeetingPrepView } from "@/components/account-detail/MeetingPrepView";
 import { SecurityPostureChecklist } from "@/components/account-detail/SecurityPostureChecklist";
+import { UseCaseUpdatesPanel } from "@/components/account-detail/UseCaseUpdatesPanel";
 import { AlertsTile } from "@/components/account-detail/health/AlertsTile";
 import { EngagementTile } from "@/components/account-detail/health/EngagementTile";
 import { AdoptionTile } from "@/components/account-detail/health/AdoptionTile";
 import { SecurityTile, deriveSecuritySummary } from "@/components/account-detail/health/SecurityTile";
+import { AIAdoptionTile } from "@/components/account-detail/health/AIAdoptionTile";
 import { AlertRow } from "@/components/alerts/AlertRow";
 import type { NBAContext } from "@/components/dashboard/ACEChat";
 import { useAuth } from "@/context/AuthContext";
+import { useFeatureFlag } from "@/context/FeatureFlagContext";
+import { withFlagGate } from "@/components/ui/flag-gate";
 import { sfUseCaseUrl } from "@/lib/utils";
 import { useACEChatConfig } from "@/context/ACEChatContext";
 
@@ -82,6 +86,10 @@ type AccountData = {
   ae_name?: string | null;
   engagement_start_date?: string | null;
   rolloff_date?: string | null;
+  primary_ace_email?: string | null;
+  coverage_ace_email?: string | null;
+  coverage_until?: string | null;
+  sf_team_aces?: string[];
 };
 
 function formatDate(iso: string | null | undefined): string {
@@ -573,7 +581,9 @@ function UseCaseCard({ uc, accountStatus }: { uc: UseCase; accountStatus?: strin
 type TabKey = "overview" | "adoption" | "timeline" | "prep" | "assistant";
 const VALID_TABS: TabKey[] = ["overview", "adoption", "timeline", "prep", "assistant"];
 
-export default function AccountDetailPage() {
+export default withFlagGate(AccountDetailPage, "page_account_detail");
+
+function AccountDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const accountId = params?.id ?? "";
@@ -589,7 +599,9 @@ export default function AccountDetailPage() {
     try { return JSON.parse(decodeURIComponent(raw)) as NBAContext; } catch { return null; }
   }, [searchParams]);
 
-  const [editingField, setEditingField] = useState<"status" | "engagement" | null>(null);
+  const [editingField, setEditingField] = useState<"status" | "engagement" | "primary_ace" | "coverage_ace" | null>(null);
+  const [coverageQuery, setCoverageQuery] = useState("");
+  const allUsers = useAllUsers();
   const [editingNotesDocUrl, setEditingNotesDocUrl] = useState(false);
   const [notesDocUrlInput, setNotesDocUrlInput] = useState("");
   const [myPaneOpen, setMyPaneOpen] = useState(true);
@@ -602,6 +614,7 @@ export default function AccountDetailPage() {
   const panesInitialized = useRef(false);
 
   const { currentUser } = useAuth();
+  const securityChecklistEnabled = useFeatureFlag("security_posture_checklist");
   const { setConfig, clearConfig } = useACEChatConfig();
 
   useEffect(() => {
@@ -621,7 +634,8 @@ export default function AccountDetailPage() {
   const dismissAlert = useDismissAlert();
   const muteAlert = useMuteAlert();
   const { data: securityPosture } = useSecurityPosture(tab === "adoption" ? accountId : "");
-  const [openTile, setOpenTile] = useState<"alerts" | "engagement" | "adoption" | "security" | null>(null);
+  const { data: cocoUsage } = useAIAdoption(tab === "adoption" ? accountId : "") as { data: AIAdoptionData | undefined };
+  const [openTile, setOpenTile] = useState<"alerts" | "engagement" | "adoption" | "security" | "ai" | null>(null);
   const { data: aceDisplayNames = {} } = useAceDisplayNames() as { data: Record<string, string> };
   const { data: trackingStatus } = useAccountTracking(accountId);
   useEffect(() => {
@@ -826,6 +840,115 @@ export default function AccountDetailPage() {
               className="rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[11px] text-slate-700 hover:border-sky-300 focus:outline-none focus:border-sky-400 transition-colors"
             />
           </div>
+          {Array.isArray(account.sf_team_aces) && account.sf_team_aces.length > 1 && (
+            <div className="relative">
+              <div className="flex flex-col items-start gap-0.5">
+                <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider px-1">Primary ACE</span>
+                <button
+                  type="button"
+                  onClick={() => setEditingField(editingField === "primary_ace" ? null : "primary_ace")}
+                  title={`SF team has ${account.sf_team_aces.length} ACEs — pick the primary`}
+                  className="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium bg-sky-50 text-sky-700 border-sky-200 hover:ring-1 hover:ring-sky-300 transition-all"
+                >
+                  {(account.primary_ace_email || account.ace_assigned || "—").split("@")[0]}
+                  <ChevronDown size={10} />
+                </button>
+              </div>
+              {editingField === "primary_ace" && (
+                <>
+                  <div className="fixed inset-0 z-10" onClick={() => setEditingField(null)} />
+                  <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[220px]">
+                    {account.sf_team_aces.map((email) => (
+                      <button
+                        key={email}
+                        type="button"
+                        onClick={() => { updateAccount.mutate({ primary_ace_email: email }); setEditingField(null); }}
+                        className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-slate-50 ${(account.primary_ace_email || account.ace_assigned) === email ? "font-semibold text-sky-700" : "text-slate-700"}`}
+                      >
+                        {email}
+                      </button>
+                    ))}
+                    {account.primary_ace_email && (
+                      <button
+                        type="button"
+                        onClick={() => { updateAccount.mutate({ primary_ace_email: null }); setEditingField(null); }}
+                        className="w-full text-left px-3 py-1.5 text-[11px] text-rose-600 border-t border-slate-100 hover:bg-rose-50"
+                      >
+                        Clear primary (use default)
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          <div className="relative">
+            <div className="flex flex-col items-start gap-0.5">
+              <span className="text-[9px] font-semibold text-slate-400 uppercase tracking-wider px-1">Coverage ACE</span>
+              <button
+                type="button"
+                onClick={() => { setEditingField(editingField === "coverage_ace" ? null : "coverage_ace"); setCoverageQuery(""); }}
+                title="Out-of-office coverage — any user"
+                className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-all ${account.coverage_ace_email ? "bg-amber-50 text-amber-700 border-amber-200 hover:ring-1 hover:ring-amber-300" : "bg-slate-50 text-slate-500 border-slate-200 hover:ring-1 hover:ring-slate-300"}`}
+              >
+                {account.coverage_ace_email ? account.coverage_ace_email.split("@")[0] : "None"}
+                <ChevronDown size={10} />
+              </button>
+            </div>
+            {editingField === "coverage_ace" && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setEditingField(null)} />
+                <div className="absolute left-0 top-full mt-1 z-20 bg-white border border-slate-200 rounded-lg shadow-lg py-1 min-w-[280px] max-h-[360px] overflow-y-auto">
+                  <div className="px-2 pt-1 pb-2 sticky top-0 bg-white border-b border-slate-100">
+                    <input
+                      type="text"
+                      autoFocus
+                      placeholder="Search by name or email…"
+                      value={coverageQuery}
+                      onChange={(e) => setCoverageQuery(e.target.value)}
+                      className="w-full rounded border border-slate-200 px-2 py-1 text-[12px] focus:outline-none focus:border-sky-400"
+                    />
+                    <div className="mt-1.5 flex items-center gap-1.5">
+                      <span className="text-[9px] font-semibold text-slate-400 uppercase">Until</span>
+                      <input
+                        type="date"
+                        value={account.coverage_until ? account.coverage_until.slice(0, 10) : ""}
+                        onChange={(e) => updateAccount.mutate({ coverage_until: e.target.value || null })}
+                        className="flex-1 rounded border border-slate-200 px-1.5 py-0.5 text-[11px]"
+                      />
+                    </div>
+                  </div>
+                  {(allUsers.data || [])
+                    .filter((u) => {
+                      const q = coverageQuery.trim().toLowerCase();
+                      if (!q) return true;
+                      return u.email.toLowerCase().includes(q) || u.display_name.toLowerCase().includes(q);
+                    })
+                    .slice(0, 50)
+                    .map((u) => (
+                      <button
+                        key={u.user_id}
+                        type="button"
+                        onClick={() => { updateAccount.mutate({ coverage_ace_email: u.email }); setEditingField(null); }}
+                        className={`w-full text-left px-3 py-1.5 text-[12px] hover:bg-slate-50 ${account.coverage_ace_email === u.email ? "font-semibold text-amber-700" : "text-slate-700"}`}
+                      >
+                        <div className="leading-tight">{u.display_name}</div>
+                        <div className="text-[10px] text-slate-400">{u.email}</div>
+                      </button>
+                    ))}
+                  {account.coverage_ace_email && (
+                    <button
+                      type="button"
+                      onClick={() => { updateAccount.mutate({ coverage_ace_email: null, coverage_until: null }); setEditingField(null); }}
+                      className="w-full text-left px-3 py-1.5 text-[11px] text-rose-600 border-t border-slate-100 hover:bg-rose-50 sticky bottom-0 bg-white"
+                    >
+                      Clear coverage
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
           <button
             type="button"
             onClick={refreshAccount}
@@ -870,9 +993,9 @@ export default function AccountDetailPage() {
 
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <FileText size={12} className="text-slate-400 shrink-0" />
-          <span className="font-medium text-slate-500">Notes doc:</span>
           {editingNotesDocUrl ? (
             <div className="flex items-center gap-1.5 flex-1">
+              <span className="font-medium text-slate-500">Notes doc:</span>
               <input
                 type="url"
                 value={notesDocUrlInput}
@@ -908,10 +1031,10 @@ export default function AccountDetailPage() {
                 href={trackingStatus.notes_doc_url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-700 hover:underline max-w-xs truncate"
+                className="inline-flex items-center gap-1 text-sky-600 hover:text-sky-700 hover:underline"
               >
                 <ExternalLink size={11} />
-                {trackingStatus.notes_doc_url.replace(/^https?:\/\//, "").slice(0, 60)}
+                Notes Doc
               </a>
               <button
                 type="button"
@@ -936,9 +1059,6 @@ export default function AccountDetailPage() {
         <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-slate-500">
           <span className="inline-flex items-center gap-1">
             <MapPin size={12} />{account.industry}{account.region ? ` · ${account.region}` : ""}
-          </span>
-          <span className="inline-flex items-center gap-1">
-            <Calendar size={12} />Started: {formatDate(account.activation_start_date)}
           </span>
           {account.total_credits_allocated ? (
             <span className="inline-flex items-center gap-1 font-medium text-slate-700">
@@ -1186,8 +1306,9 @@ export default function AccountDetailPage() {
                 }} />
               </div>
 
-              <div className="w-64 shrink-0">
+              <div className="w-80 shrink-0">
                 <div className="sticky top-6 space-y-4">
+                  <UseCaseUpdatesPanel accountId={accountId} />
                   <div className="rounded-xl border border-slate-200 bg-white shadow-sm p-4">
                     <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1.5">
                       <CalendarCheck2 size={12} className="text-emerald-500" />Meetings
@@ -1309,7 +1430,7 @@ export default function AccountDetailPage() {
             <div className="space-y-4">
 
               {/* Scorecard tile row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-6 gap-4">
                 <AlertsTile
                   alerts={accountAlerts as AlertItem[]}
                   isActive={openTile === "alerts"}
@@ -1333,6 +1454,13 @@ export default function AccountDetailPage() {
                   isActive={openTile === "security"}
                   onOpen={() => setOpenTile(openTile === "security" ? null : "security")}
                 />
+                <div className="md:col-span-2 2xl:col-span-2">
+                  <AIAdoptionTile
+                    aiAdoption={cocoUsage}
+                    isActive={openTile === "ai"}
+                    onOpen={() => setOpenTile(openTile === "ai" ? null : "ai")}
+                  />
+                </div>
               </div>
 
               {/* Expanded detail panels */}
@@ -1518,7 +1646,85 @@ export default function AccountDetailPage() {
 
               {openTile === "security" && (
                 <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-4">
-                  <SecurityPostureChecklist accountId={accountId} />
+                  {securityChecklistEnabled ? (
+                    <SecurityPostureChecklist accountId={accountId} />
+                  ) : (
+                    <p className="text-xs text-slate-400 italic">Security posture checklist is currently disabled.</p>
+                  )}
+                </div>
+              )}
+
+              {openTile === "ai" && (
+                <div className="rounded-2xl border border-slate-200 bg-white shadow-sm p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Sparkles size={14} className="text-violet-500" />
+                    <p className="text-sm font-semibold text-slate-700">AI Adoption (L28D)</p>
+                  </div>
+                  {!cocoUsage || cocoUsage.total_users_28d === 0 ? (
+                    <p className="text-sm text-slate-400">No AI surface usage detected for this account.</p>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                        {([
+                          { key: "cli", label: "CoCo CLI", border: "border-violet-100", bg: "bg-violet-50", text: "text-violet-700", num: "text-violet-800" },
+                          { key: "desktop", label: "CoCo Desktop", border: "border-sky-100", bg: "bg-sky-50", text: "text-sky-700", num: "text-sky-800" },
+                          { key: "snowsight", label: "CoCo Snowsight", border: "border-emerald-100", bg: "bg-emerald-50", text: "text-emerald-700", num: "text-emerald-800" },
+                          { key: "si", label: "Snowflake Intelligence", border: "border-amber-100", bg: "bg-amber-50", text: "text-amber-700", num: "text-amber-800" },
+                        ] as const).map((s) => {
+                          const m = cocoUsage.surfaces[s.key];
+                          return (
+                            <div key={s.key} className={`rounded-lg border ${s.border} ${s.bg} p-3`}>
+                              <p className={`text-[10px] font-semibold uppercase tracking-wide mb-1 ${s.text}`}>{s.label}</p>
+                              <p className={`text-2xl font-bold ${s.num} tabular-nums`}>{m.users_28d}</p>
+                              <p className={`text-[10px] ${s.text}`}>distinct users (L28D)</p>
+                              <div className="mt-2 space-y-0.5 text-[10px] text-slate-500">
+                                <div className="flex justify-between"><span>Prompts</span><span className="font-medium text-slate-700">{m.requests_28d.toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span>Sessions</span><span className="font-medium text-slate-700">{m.sessions_28d.toLocaleString()}</span></div>
+                                <div className="flex justify-between"><span>Depth</span><span className="font-medium text-slate-700">{m.avg_days_per_user > 0 ? `${m.avg_days_per_user}d/user` : "—"}</span></div>
+                                <div className="flex justify-between"><span>Avg prompts/user</span><span className="font-medium text-slate-700">{m.avg_prompts_per_user > 0 ? m.avg_prompts_per_user.toLocaleString() : "—"}</span></div>
+                                <div className="flex justify-between"><span>Last active</span><span className="font-medium text-slate-700">{m.last_active ?? "—"}</span></div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {cocoUsage.weekly_trend.length > 0 && (
+                        <div>
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Weekly Active Users by Surface</p>
+                            <div className="flex items-center gap-3 text-[10px] text-slate-500">
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-violet-400" /> CLI</span>
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-sky-400" /> Desktop</span>
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-400" /> Snowsight</span>
+                              <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-amber-400" /> SI</span>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-8 gap-1">
+                            {cocoUsage.weekly_trend.map((w) => {
+                              const total = w.cli_users + w.desktop_users + w.snowsight_users + w.si_users;
+                              const max = Math.max(...cocoUsage.weekly_trend.map((t) => t.cli_users + t.desktop_users + t.snowsight_users + t.si_users), 1);
+                              const heightPct = (total / max) * 100;
+                              return (
+                                <div key={w.week_start} className="text-center">
+                                  <div className="relative h-24 flex items-end justify-center">
+                                    <div className="w-full flex flex-col-reverse rounded-t overflow-hidden" style={{ height: `${Math.max(heightPct, 4)}%` }}>
+                                      {w.cli_users > 0 && <div className="bg-violet-400" style={{ height: `${(w.cli_users / Math.max(total, 1)) * 100}%` }} title={`CLI ${w.cli_users}`} />}
+                                      {w.desktop_users > 0 && <div className="bg-sky-400" style={{ height: `${(w.desktop_users / Math.max(total, 1)) * 100}%` }} title={`Desktop ${w.desktop_users}`} />}
+                                      {w.snowsight_users > 0 && <div className="bg-emerald-400" style={{ height: `${(w.snowsight_users / Math.max(total, 1)) * 100}%` }} title={`Snowsight ${w.snowsight_users}`} />}
+                                      {w.si_users > 0 && <div className="bg-amber-400" style={{ height: `${(w.si_users / Math.max(total, 1)) * 100}%` }} title={`SI ${w.si_users}`} />}
+                                    </div>
+                                  </div>
+                                  <p className="text-[8px] text-slate-400 mt-1">{w.week_start.slice(5)}</p>
+                                  <p className="text-[9px] font-medium text-slate-600">{total}</p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                          <p className="text-[9px] text-slate-400 mt-1">L28D = last 28 days. Users are distinct identities per surface; cross-surface IDs are not deduped.</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

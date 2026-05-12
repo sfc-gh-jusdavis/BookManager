@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Calendar, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { withFlagGate } from "@/components/ui/flag-gate";
 import { useAccounts, type Account } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -43,7 +44,7 @@ type GanttRow = {
   endDate: Date | null;
 };
 
-export default function TimelinePage() {
+function TimelinePage() {
   const { currentUser } = useAuth();
   const { data: allAccounts = [], isLoading } = useAccounts();
   const [offsetMonths, setOffsetMonths] = useState(0);
@@ -87,11 +88,11 @@ export default function TimelinePage() {
 
   const filteredRows = useMemo(() => {
     switch (filterStatus) {
-      case "dated":   return rows.filter((r) => r.startDate);
-      case "undated": return rows.filter((r) => !r.startDate);
+      case "dated":   return rows.filter((r) => r.startDate && r.account.status.toLowerCase() !== "stopped");
+      case "undated": return rows.filter((r) => !r.startDate && r.account.status.toLowerCase() !== "stopped");
       case "active": case "not started": case "complete": case "paused": case "stopped":
         return rows.filter((r) => r.account.status.toLowerCase() === filterStatus);
-      default: return rows;
+      default: return rows.filter((r) => r.account.status.toLowerCase() !== "stopped");
     }
   }, [rows, filterStatus]);
 
@@ -326,3 +327,5 @@ export default function TimelinePage() {
     </div>
   );
 }
+
+export default withFlagGate(TimelinePage, "page_timeline");
