@@ -9,6 +9,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from "recharts";
 import { DollarSign, TrendingUp, AlertTriangle, Activity } from "lucide-react";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type CostData = {
   total_credits_used: number;
@@ -25,7 +26,7 @@ function creditsShort(n: number): string {
 
 const COLORS = ["#29B5E8", "#8B5CF6", "#F59E0B", "#10B981", "#EF4444", "#64748b"];
 
-export default function AdminCostsPage() {
+function AdminCostsPage() {
   const { currentUser } = useAuth();
   const isAdmin = currentUser?.is_admin;
 
@@ -178,3 +179,5 @@ export default function AdminCostsPage() {
     </div>
   );
 }
+
+export default withFlagGate(AdminCostsPage, "admin_costs_page");

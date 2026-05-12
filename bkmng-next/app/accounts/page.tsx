@@ -6,6 +6,7 @@ import { ArrowUp, ArrowDown, ChevronRight, ChevronDown, Search, X, Plus, AlertTr
 import { useAuth } from "@/context/AuthContext";
 import { useAccounts, useUseCases, useAceDisplayNames, useAccountRevenueSummaries, useSignalCounts, useRefreshBook, type SignalCountEntry, type Account, type RevenueSummary } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type PSNote = { note_id: string; content: string; created_at: string; author_id: string };
 
@@ -276,7 +277,7 @@ function ExpandedRow({ account, useCases, rev, sigCounts }: { account: Account; 
 const STATUS_OPTIONS = ["All", "not started", "active", "complete", "stopped", "paused"];
 const ENGAGEMENT_OPTIONS = ["All", "Low", "Normal", "High"];
 
-export default function AccountsPage() {
+function AccountsPage() {
   const { currentUser } = useAuth();
   const { data: accounts = [], isLoading: accsLoading } = useAccounts() as { data: Account[]; isLoading: boolean };
   const { data: useCases = [] } = useUseCases() as { data: UseCase[] };
@@ -552,3 +553,5 @@ export default function AccountsPage() {
     </div>
   );
 }
+
+export default withFlagGate(AccountsPage, "page_accounts_list");
