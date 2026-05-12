@@ -123,7 +123,12 @@ class SnowflakeDataService:
             ORDER BY a.ACCOUNT_NAME
         """
         if ace_filter:
-            cur.execute(sql.format(where="WHERE a.ACE_ASSIGNED = %s"), (ace_filter,))
+            cur.execute(
+                sql.format(
+                    where="WHERE (a.ACE_ASSIGNED = %s OR (a.COVERAGE_ACE_EMAIL = %s AND (a.COVERAGE_UNTIL IS NULL OR a.COVERAGE_UNTIL >= CURRENT_DATE())))"
+                ),
+                (ace_filter, ace_filter),
+            )
         elif acem_filter:
             cur.execute(
                 sql.format(where="WHERE a.ACE_ASSIGNED IN (SELECT ACE_EMAIL FROM BKMNG_ACEM_TEAM WHERE ACEM_EMAIL = %s)"),
@@ -188,24 +193,47 @@ class SnowflakeDataService:
                 a.AE_NAME,
                 s.ENGAGEMENT_START_DATE,
                 s.ROLLOFF_DATE,
+                s.PRIMARY_ACE_EMAIL,
+                s.COVERAGE_ACE_EMAIL,
+                s.COVERAGE_UNTIL,
                 COUNT(uc.USE_CASE_ID) AS USE_CASE_COUNT
             FROM BKMNG_ONT_ACCOUNTS a
             LEFT JOIN BKMNG_USE_CASES uc ON uc.ACCOUNT_ID = a.ACCOUNT_ID
             LEFT JOIN BKMNG_ACCOUNT_SETTINGS s ON s.ACCOUNT_ID = a.ACCOUNT_ID
             WHERE a.ACCOUNT_ID = %s
             {ace_clause}
-            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32
         """
         if ace_filter:
             cur.execute(
-                sql.format(ace_clause="AND a.ACE_ASSIGNED = %s"),
-                (account_id, ace_filter),
+                sql.format(
+                    ace_clause="AND (a.ACE_ASSIGNED = %s OR (a.COVERAGE_ACE_EMAIL = %s AND (a.COVERAGE_UNTIL IS NULL OR a.COVERAGE_UNTIL >= CURRENT_DATE())))"
+                ),
+                (account_id, ace_filter, ace_filter),
             )
         else:
             cur.execute(sql.format(ace_clause=""), (account_id,))
         row = cur.fetchone()
         result = _row_to_account(row) if row else None
         if result is not None:
+            # Pull SF team ACEs for this account so the UI can offer a Primary picker
+            try:
+                cur.execute(
+                    """
+                    SELECT DISTINCT u.EMAIL AS EMAIL
+                    FROM FIVETRAN.SALESFORCE.ACCOUNT_TEAM_MEMBER atm
+                    INNER JOIN FIVETRAN.SALESFORCE.USER u
+                        ON u.ID = atm.USER_ID AND u._FIVETRAN_DELETED = FALSE
+                    WHERE atm.ACCOUNT_ID = %s
+                      AND atm.TEAM_MEMBER_ROLE = 'SE - Activation'
+                      AND atm.IS_DELETED = FALSE
+                    ORDER BY u.EMAIL
+                    """,
+                    (account_id,),
+                )
+                result.sf_team_aces = [r["EMAIL"] for r in cur.fetchall() if r.get("EMAIL")]
+            except Exception:
+                result.sf_team_aces = []
             cache_set(cache_key, result, ttl=180)
         return result
 
@@ -263,7 +291,7 @@ class SnowflakeDataService:
         upcoming_only: bool = False,
     ) -> list[MeetingActivity]:
         cur = self._cursor()
-        where = "WHERE m.ACCOUNT_ID = %s"
+        where = "WHERE m.ACCOUNT_ID = %s AND (m.IS_UPCOMING = FALSE OR CONTAINS(UPPER(m.TITLE), UPPER(m.ACCOUNT_NAME)))"
         params: list = [account_id]
         if upcoming_only:
             where += " AND m.IS_UPCOMING = TRUE"
@@ -312,10 +340,57 @@ class SnowflakeDataService:
                    MEETING_END, DURATION_MINS, RECORDING_URL, PARTICIPANTS, SOURCE
             FROM BKMNG_UNIFIED_MEETINGS
             WHERE ACCOUNT_ID = %s AND IS_UPCOMING = TRUE
+              AND CONTAINS(UPPER(TITLE), UPPER(ACCOUNT_NAME))
             ORDER BY MEETING_START ASC
             LIMIT {int(limit)}
             """,
             (account_id,),
+        )
+        out: list[dict] = []
+        for r in cur.fetchall():
+            out.append({
+                "meeting_id": r["MEETING_ID"],
+                "account_id": r["ACCOUNT_ID"],
+                "account_name": r.get("ACCOUNT_NAME"),
+                "title": r.get("TITLE"),
+                "meeting_start": r["MEETING_START"].isoformat() if r.get("MEETING_START") else None,
+                "meeting_end": r["MEETING_END"].isoformat() if r.get("MEETING_END") else None,
+                "duration_mins": int(r["DURATION_MINS"]) if r.get("DURATION_MINS") is not None else None,
+                "recording_url": r.get("RECORDING_URL"),
+                "participants": r.get("PARTICIPANTS"),
+                "source": r.get("SOURCE"),
+            })
+        return out
+
+    def list_all_upcoming_meetings(
+        self,
+        ace_email: str,
+        limit: int = 15,
+    ) -> list[dict]:
+        cur = self._cursor()
+        cur.execute(
+            f"""
+            WITH ranked AS (
+              SELECT m.MEETING_ID, m.ACCOUNT_ID, m.ACCOUNT_NAME, m.TITLE, m.MEETING_START,
+                     m.MEETING_END, m.DURATION_MINS, m.RECORDING_URL, m.PARTICIPANTS, m.SOURCE,
+                     ROW_NUMBER() OVER (
+                       PARTITION BY SPLIT_PART(m.MEETING_ID, ':', 1), m.MEETING_START
+                       ORDER BY
+                         CASE WHEN CONTAINS(UPPER(m.TITLE), UPPER(m.ACCOUNT_NAME)) THEN 0 ELSE 1 END,
+                         m.ACCOUNT_NAME
+                     ) AS RN
+              FROM BKMNG_UNIFIED_MEETINGS m
+              JOIN BKMNG_ONT_ACCOUNTS a ON a.ACCOUNT_ID = m.ACCOUNT_ID
+              WHERE m.IS_UPCOMING = TRUE
+                AND (a.ACE_ASSIGNED = %s OR (a.COVERAGE_ACE_EMAIL = %s AND (a.COVERAGE_UNTIL IS NULL OR a.COVERAGE_UNTIL >= CURRENT_DATE())))
+            )
+            SELECT MEETING_ID, ACCOUNT_ID, ACCOUNT_NAME, TITLE, MEETING_START,
+                   MEETING_END, DURATION_MINS, RECORDING_URL, PARTICIPANTS, SOURCE
+            FROM ranked WHERE RN = 1
+            ORDER BY MEETING_START ASC
+            LIMIT {int(limit)}
+            """,
+            (ace_email, ace_email),
         )
         out: list[dict] = []
         for r in cur.fetchall():
@@ -1965,6 +2040,9 @@ Respond with ONLY this JSON:
         no_recording: Optional[bool] = None,
         engagement_start_date: Optional[str] = None,
         rolloff_date: Optional[str] = None,
+        primary_ace_email: Optional[str] = None,
+        coverage_ace_email: Optional[str] = None,
+        coverage_until: Optional[str] = None,
         updated_by: Optional[str] = None,
     ) -> None:
         cache_invalidate_prefix(f"account:{account_id}")
@@ -1982,6 +2060,12 @@ Respond with ONLY this JSON:
             settings_fields.append(("ENGAGEMENT_START_DATE", engagement_start_date if engagement_start_date != "" else None))
         if rolloff_date is not None:
             settings_fields.append(("ROLLOFF_DATE", rolloff_date if rolloff_date != "" else None))
+        if primary_ace_email is not None:
+            settings_fields.append(("PRIMARY_ACE_EMAIL", primary_ace_email if primary_ace_email != "" else None))
+        if coverage_ace_email is not None:
+            settings_fields.append(("COVERAGE_ACE_EMAIL", coverage_ace_email if coverage_ace_email != "" else None))
+        if coverage_until is not None:
+            settings_fields.append(("COVERAGE_UNTIL", coverage_until if coverage_until != "" else None))
         if settings_fields:
             set_clauses = ", ".join(f"t.{col} = s.{col}" for col, _ in settings_fields)
             src_cols = ", ".join(f"%s AS {col}" for col, _ in settings_fields)
@@ -1999,8 +2083,8 @@ Respond with ONLY this JSON:
                 """,
                 ([account_id, updated_by] + params),
             )
-        # Project STATUS / ENGAGEMENT_STATUS into BKMNG_ONT_ACCOUNTS so readers
-        # (which hit ONT) see the change immediately. The scheduled refresh
+        # Project STATUS / ENGAGEMENT_STATUS / coverage / primary into BKMNG_ONT_ACCOUNTS
+        # so readers (which hit ONT) see the change immediately. The scheduled refresh
         # (SP_REFRESH_BKMNG_ONT_ACCOUNTS) rebuilds this projection from settings.
         ont_parts = []
         ont_params = []
@@ -2010,12 +2094,53 @@ Respond with ONLY this JSON:
         if engagement_status is not None:
             ont_parts.append("ENGAGEMENT_STATUS = %s")
             ont_params.append(engagement_status if engagement_status != "" else None)
+        if primary_ace_email is not None:
+            ont_parts.append("PRIMARY_ACE_EMAIL = %s")
+            ont_params.append(primary_ace_email if primary_ace_email != "" else None)
+        if coverage_ace_email is not None:
+            ont_parts.append("COVERAGE_ACE_EMAIL = %s")
+            ont_params.append(coverage_ace_email if coverage_ace_email != "" else None)
+        if coverage_until is not None:
+            ont_parts.append("COVERAGE_UNTIL = %s")
+            ont_params.append(coverage_until if coverage_until != "" else None)
         if ont_parts:
             ont_params.append(account_id)
             cur.execute(
                 f"UPDATE TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS SET {', '.join(ont_parts)} WHERE ACCOUNT_ID = %s",
                 ont_params,
             )
+        # If primary ACE was changed and the new primary is in the SF team for this account,
+        # immediately reflect the change in BKMNG_ACCOUNTS.ACE_ASSIGNED so scope filters work
+        # without waiting for the scheduled task. Falls back to the alphabetical pick when
+        # primary is cleared or invalid.
+        if primary_ace_email is not None:
+            cur.execute(
+                """
+                SELECT u.EMAIL
+                FROM FIVETRAN.SALESFORCE.ACCOUNT_TEAM_MEMBER atm
+                INNER JOIN FIVETRAN.SALESFORCE.USER u
+                    ON u.ID = atm.USER_ID AND u._FIVETRAN_DELETED = FALSE
+                WHERE atm.ACCOUNT_ID = %s
+                  AND atm.TEAM_MEMBER_ROLE = 'SE - Activation'
+                  AND atm.IS_DELETED = FALSE
+                QUALIFY ROW_NUMBER() OVER (
+                    ORDER BY CASE WHEN LOWER(u.EMAIL) = LOWER(%s) THEN 0 ELSE 1 END,
+                             u.EMAIL
+                ) = 1
+                """,
+                [account_id, primary_ace_email or ""],
+            )
+            picked = cur.fetchone()
+            picked_email = picked["EMAIL"] if picked and picked.get("EMAIL") else None
+            if picked_email:
+                cur.execute(
+                    "UPDATE TEMP.JUSDAVIS.BKMNG_ACCOUNTS SET ACE_ASSIGNED = %s WHERE ACCOUNT_ID = %s",
+                    [picked_email, account_id],
+                )
+                cur.execute(
+                    "UPDATE TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS SET ACE_ASSIGNED = %s WHERE ACCOUNT_ID = %s",
+                    [picked_email, account_id],
+                )
 
     def manual_refresh_account(self, account_id: str) -> str:
         """Trigger SP_MANUAL_REFRESH_FOR_ACCOUNT to pull fresh data from
@@ -3420,6 +3545,301 @@ Respond with ONLY this JSON:
             for r in rows
         ]
 
+    # ------------------------------------------------------------------
+    # Use Case Updates (weekly SF-paste-ready suggestions)
+    # ------------------------------------------------------------------
+
+    def _week_monday(self) -> str:
+        from datetime import date as _date, timedelta as _td
+        today = _date.today()
+        return (today - _td(days=today.weekday())).isoformat()
+
+    def _fetch_uc_update_row(self, use_case_id: str) -> Optional[dict]:
+        cur = self._cursor()
+        cur.execute(
+            """
+            SELECT UPDATE_ID, USE_CASE_ID, ACCOUNT_ID, USE_CASE_NAME, STAGE, ACE_EMAIL,
+                   WEEK_OF, UPDATE_TEXT, STATUS, BASIS_SUMMARY,
+                   SOURCE_COUNT_NOTES, SOURCE_COUNT_GONG, SOURCE_COUNT_TIMELINE,
+                   IS_EDITED, GENERATED_AT, LAST_MODIFIED_AT, LAST_MODIFIED_BY
+            FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_UPDATES
+            WHERE USE_CASE_ID = %s
+            ORDER BY GENERATED_AT DESC
+            LIMIT 1
+            """,
+            (use_case_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        r = dict(row)
+        return {
+            "use_case_id": r.get("USE_CASE_ID"),
+            "account_id": r.get("ACCOUNT_ID"),
+            "use_case_name": r.get("USE_CASE_NAME"),
+            "stage": r.get("STAGE"),
+            "ace_email": r.get("ACE_EMAIL"),
+            "week_of": r["WEEK_OF"].isoformat() if r.get("WEEK_OF") else None,
+            "update_text": r.get("UPDATE_TEXT") or "",
+            "status": r.get("STATUS") or "suggested",
+            "basis_summary": r.get("BASIS_SUMMARY") or "",
+            "source_count_notes": int(r.get("SOURCE_COUNT_NOTES") or 0),
+            "source_count_gong": int(r.get("SOURCE_COUNT_GONG") or 0),
+            "source_count_timeline": int(r.get("SOURCE_COUNT_TIMELINE") or 0),
+            "is_edited": bool(r.get("IS_EDITED")),
+            "generated_at": r["GENERATED_AT"].isoformat() if r.get("GENERATED_AT") else None,
+            "last_modified_at": r["LAST_MODIFIED_AT"].isoformat() if r.get("LAST_MODIFIED_AT") else None,
+            "last_modified_by": r.get("LAST_MODIFIED_BY"),
+        }
+
+    def _generate_one_use_case_update(
+        self,
+        use_case_id: str,
+        account_id: str,
+        use_case_name: str,
+        stage: str,
+        ace_email: str,
+    ) -> dict:
+        """Build prompt, call Cortex, and DELETE+INSERT a fresh row for this use case."""
+        cur = self._cursor()
+
+        # 1) Latest PS notes for this use case
+        cur.execute(
+            """
+            SELECT TO_CHAR(NOTE_DATE) AS NOTE_DATE,
+                   COALESCE(AUTHOR_INITIALS, 'SE') AS AUTHOR_INITIALS,
+                   LEFT(CONTENT, 600) AS CONTENT
+            FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_NOTES
+            WHERE USE_CASE_ID = %s AND CONTENT IS NOT NULL
+            ORDER BY NOTE_DATE DESC NULLS LAST
+            LIMIT 5
+            """,
+            (use_case_id,),
+        )
+        note_rows = cur.fetchall()
+        ps_notes_text = "\n".join(
+            f"[{(r.get('NOTE_DATE') or 'undated')}] ({r.get('AUTHOR_INITIALS')}) {r.get('CONTENT')}"
+            for r in note_rows
+        ) or "None"
+
+        # 2) Recent Gong calls for the account (last 21 days)
+        cur.execute(
+            """
+            SELECT TO_CHAR(INTERACTION_DATE::DATE) AS CALL_DATE,
+                   COALESCE(TITLE, 'Call') AS TITLE,
+                   LEFT(COALESCE(SUMMARY, ''), 400) AS SUMMARY,
+                   LEFT(COALESCE(KEY_POINTS, ''), 300) AS KEY_POINTS,
+                   LEFT(COALESCE(NEXT_STEPS, ''), 200) AS NEXT_STEPS
+            FROM TEMP.JUSDAVIS.BKMNG_ONT_INTERACTIONS
+            WHERE ACCOUNT_ID = %s
+              AND INTERACTION_DATE >= DATEADD(day, -21, CURRENT_DATE())
+            ORDER BY INTERACTION_DATE DESC
+            LIMIT 5
+            """,
+            (account_id,),
+        )
+        gong_rows = cur.fetchall()
+        gong_text = "\n\n".join(
+            f"[{r['CALL_DATE']}] {r['TITLE']}\nSummary: {r['SUMMARY']}\nKey Points: {r['KEY_POINTS']}\nNext Steps: {r['NEXT_STEPS']}"
+            for r in gong_rows
+        ) or "None"
+
+        # 3) Manual timeline entries (last 14d)
+        cur.execute(
+            """
+            SELECT TO_CHAR(MEETING_DATE::DATE) AS ENTRY_DATE,
+                   COALESCE(TITLE, 'Note') AS TITLE,
+                   COALESCE(SOURCE_TYPE, 'notes') AS SOURCE_TYPE,
+                   LEFT(COALESCE(NOTES_SUMMARY, NOTES, ''), 600) AS BODY
+            FROM TEMP.JUSDAVIS.BKMNG_MANUAL_MEETINGS
+            WHERE ACCOUNT_ID = %s
+              AND NOTES_ADDED = TRUE
+              AND MEETING_DATE >= DATEADD(day, -14, CURRENT_DATE())
+            ORDER BY MEETING_DATE DESC
+            LIMIT 5
+            """,
+            (account_id,),
+        )
+        tl_rows = cur.fetchall()
+        timeline_text = "\n\n".join(
+            f"[{r['ENTRY_DATE']}] ({r['SOURCE_TYPE']}) {r['TITLE']}: {r['BODY']}"
+            for r in tl_rows
+        ) or "None"
+
+        n_notes = len(note_rows)
+        n_gong = len(gong_rows)
+        n_tl = len(tl_rows)
+
+        week_of = self._week_monday()
+        basis = (
+            f"Notes: {n_notes} recent | Gong (21d): {n_gong} | Timeline (14d): {n_tl}"
+        )
+
+        # No fresh signal in last 7 days for this UC: produce a "no update" status
+        # We approximate freshness using counts: if all sources empty in last window -> no_update.
+        if n_notes == 0 and n_gong == 0 and n_tl == 0:
+            update_text = "No update — no new meetings, calls, or notes this week."
+            status = "no_update"
+        else:
+            prompt = (
+                "You are a Snowflake Sales Engineer writing a weekly use case status update for Salesforce. "
+                "Write 1-3 short sentences in past tense, professional tone, no bullets or headers, "
+                "matching this style: \"Met with the team to validate Phase 2 scope. Decided to start "
+                "POC by month-end with Fivetran ingestion.\" Focus on what happened, decisions made, "
+                "and next steps if mentioned. If material is thin, output one short sentence. "
+                "Do NOT add quotes, preamble, labels, or commentary. Output only the update text.\n\n"
+                f"Use Case: {use_case_name}\n"
+                f"Stage: {stage}\n\n"
+                f"Recent PS notes:\n{ps_notes_text}\n\n"
+                f"Recent Gong calls / meetings:\n{gong_text}\n\n"
+                f"Recent timeline entries (last 14 days):\n{timeline_text}\n"
+            )
+            try:
+                cur.execute(
+                    "SELECT SNOWFLAKE.CORTEX.COMPLETE('llama3.1-8b', %s) AS UPDATE_TEXT",
+                    (prompt[:14000],),
+                )
+                row = cur.fetchone()
+                raw = (row.get("UPDATE_TEXT") or "").strip() if row else ""
+            except Exception as e:
+                logger.error("Cortex use-case-update gen failed for %s: %s", use_case_id, e)
+                raw = ""
+
+            # Strip wrapping quotes / common preambles
+            cleaned = raw.strip()
+            for prefix in ("Update:", "Summary:", "Status:"):
+                if cleaned.lower().startswith(prefix.lower()):
+                    cleaned = cleaned[len(prefix):].strip()
+            if cleaned.startswith('"') and cleaned.endswith('"'):
+                cleaned = cleaned[1:-1].strip()
+            if not cleaned:
+                cleaned = "No update — generation failed; click Regenerate to retry."
+            update_text = cleaned[:2000]
+            status = "suggested"
+
+        # DELETE + INSERT (one row per UC)
+        cur.execute(
+            "DELETE FROM TEMP.JUSDAVIS.BKMNG_USE_CASE_UPDATES WHERE USE_CASE_ID = %s",
+            (use_case_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO TEMP.JUSDAVIS.BKMNG_USE_CASE_UPDATES
+                (USE_CASE_ID, ACCOUNT_ID, USE_CASE_NAME, STAGE, ACE_EMAIL,
+                 WEEK_OF, UPDATE_TEXT, STATUS, BASIS_SUMMARY,
+                 SOURCE_COUNT_NOTES, SOURCE_COUNT_GONG, SOURCE_COUNT_TIMELINE,
+                 IS_EDITED, GENERATED_AT, LAST_MODIFIED_AT, LAST_MODIFIED_BY)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, FALSE,
+                    CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), %s)
+            """,
+            (
+                use_case_id, account_id, use_case_name, stage, ace_email,
+                week_of, update_text, status, basis,
+                n_notes, n_gong, n_tl, ace_email,
+            ),
+        )
+        return self._fetch_uc_update_row(use_case_id) or {}
+
+    def _list_active_use_cases_for_user(
+        self, account_id: str, ace_email: str, my_only: bool = True
+    ) -> list[dict]:
+        """Lightweight UC list for update generation. Excludes lost/archived stages."""
+        cur = self._cursor()
+        sql = """
+            SELECT USE_CASE_ID, ACCOUNT_ID,
+                   COALESCE(USE_CASE_NAME, 'Untitled') AS USE_CASE_NAME,
+                   COALESCE(STAGE, 'Unknown') AS STAGE,
+                   COALESCE(LEAD_SE, '') AS LEAD_SE,
+                   COALESCE(ACE_ASSIGNED, '') AS ACE_ASSIGNED
+            FROM TEMP.JUSDAVIS.BKMNG_USE_CASES
+            WHERE ACCOUNT_ID = %s
+              AND COALESCE(STAGE, '') NOT ILIKE '%%Lost%%'
+              AND COALESCE(STAGE, '') NOT ILIKE '%%Closed%%'
+        """
+        params: tuple = (account_id,)
+        if my_only:
+            sql += " AND (LEAD_SE = %s OR ACE_ASSIGNED = %s)"
+            params = (account_id, ace_email, ace_email)
+        sql += " ORDER BY USE_CASE_NAME"
+        cur.execute(sql, params)
+        return [dict(r) for r in cur.fetchall()]
+
+    def get_use_case_updates(
+        self, account_id: str, ace_email: str, my_only: bool = True
+    ) -> list[dict]:
+        """Return cached suggestions for this account's user-owned active use cases.
+        Lazily generates when no cached row exists for a UC."""
+        ucs = self._list_active_use_cases_for_user(account_id, ace_email, my_only=my_only)
+        if not ucs and my_only:
+            # Fall back to all active UCs if user owns none on this account
+            ucs = self._list_active_use_cases_for_user(account_id, ace_email, my_only=False)
+        results: list[dict] = []
+        for uc in ucs:
+            existing = self._fetch_uc_update_row(uc["USE_CASE_ID"])
+            if existing:
+                # Refresh display name/stage if changed in source
+                results.append(existing)
+            else:
+                generated = self._generate_one_use_case_update(
+                    uc["USE_CASE_ID"], uc["ACCOUNT_ID"],
+                    uc["USE_CASE_NAME"], uc["STAGE"], ace_email,
+                )
+                if generated:
+                    results.append(generated)
+        return results
+
+    def regenerate_use_case_updates(
+        self, account_id: str, ace_email: str, my_only: bool = True
+    ) -> list[dict]:
+        ucs = self._list_active_use_cases_for_user(account_id, ace_email, my_only=my_only)
+        if not ucs and my_only:
+            ucs = self._list_active_use_cases_for_user(account_id, ace_email, my_only=False)
+        results: list[dict] = []
+        for uc in ucs:
+            results.append(self._generate_one_use_case_update(
+                uc["USE_CASE_ID"], uc["ACCOUNT_ID"],
+                uc["USE_CASE_NAME"], uc["STAGE"], ace_email,
+            ))
+        return results
+
+    def regenerate_one_use_case_update(self, use_case_id: str, ace_email: str) -> dict:
+        cur = self._cursor()
+        cur.execute(
+            """
+            SELECT USE_CASE_ID, ACCOUNT_ID,
+                   COALESCE(USE_CASE_NAME, 'Untitled') AS USE_CASE_NAME,
+                   COALESCE(STAGE, 'Unknown') AS STAGE
+            FROM TEMP.JUSDAVIS.BKMNG_USE_CASES
+            WHERE USE_CASE_ID = %s
+            """,
+            (use_case_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            return {}
+        return self._generate_one_use_case_update(
+            row["USE_CASE_ID"], row["ACCOUNT_ID"],
+            row["USE_CASE_NAME"], row["STAGE"], ace_email,
+        )
+
+    def update_use_case_update_text(
+        self, use_case_id: str, new_text: str, ace_email: str
+    ) -> dict:
+        cur = self._cursor()
+        cur.execute(
+            """
+            UPDATE TEMP.JUSDAVIS.BKMNG_USE_CASE_UPDATES
+            SET UPDATE_TEXT = %s,
+                STATUS = 'edited',
+                IS_EDITED = TRUE,
+                LAST_MODIFIED_AT = CURRENT_TIMESTAMP(),
+                LAST_MODIFIED_BY = %s
+            WHERE USE_CASE_ID = %s
+            """,
+            (new_text[:2000], ace_email, use_case_id),
+        )
+        return self._fetch_uc_update_row(use_case_id) or {}
+
     def get_account_timeline(self, account_id: str) -> list[dict]:
         cache_key = f"timeline:{account_id}"
         cached = cache_get(cache_key)
@@ -3565,6 +3985,175 @@ Respond with ONLY this JSON:
         cache_set(cache_key, result, ttl=600)
         return result
 
+
+    def get_ai_adoption(self, account_id: str) -> dict:
+        cache_key = f"ai_adoption:{account_id}"
+        cached = cache_get(cache_key)
+        if cached is not None:
+            return cached
+        cur = self._cursor()
+
+        # Per-surface L28D summary for Cortex Code (CLI/Desktop/Snowsight)
+        cur.execute(
+            """
+            WITH per_user AS (
+                SELECT
+                    LOWER(ORIGIN) AS ORIGIN,
+                    USER_NAME,
+                    COUNT(DISTINCT DATE_AT) AS DAYS,
+                    SUM(REQUEST_COUNT) AS PROMPTS,
+                    SUM(DISTINCT_SESSIONS) AS SESSIONS,
+                    MAX(DATE_AT) AS LAST_ACTIVE
+                FROM SALES.RAVEN.A360_COCO_USAGE_USER_DAILY_VIEW
+                WHERE SALESFORCE_ACCOUNT_ID = %s
+                  AND DATE_AT >= DATEADD(day, -28, CURRENT_DATE())
+                GROUP BY 1, 2
+            )
+            SELECT
+                ORIGIN,
+                COUNT(*) AS USERS_28D,
+                COALESCE(SUM(PROMPTS), 0) AS REQUESTS_28D,
+                COALESCE(SUM(SESSIONS), 0) AS SESSIONS_28D,
+                MAX(LAST_ACTIVE)::VARCHAR AS LAST_ACTIVE,
+                ROUND(AVG(DAYS), 1) AS AVG_DAYS_PER_USER,
+                ROUND(AVG(PROMPTS), 0) AS AVG_PROMPTS_PER_USER
+            FROM per_user
+            GROUP BY 1
+            """,
+            (account_id,),
+        )
+        coco_rows = {(r.get("ORIGIN") or "").lower(): r for r in cur.fetchall()}
+
+        # SI L28D summary
+        cur.execute(
+            """
+            WITH per_user AS (
+                SELECT
+                    USER_ID,
+                    COUNT(DISTINCT DS) AS DAYS,
+                    SUM(NUM_REQUESTS) AS PROMPTS,
+                    SUM(NUM_TRACES) AS SESSIONS,
+                    MAX(DS) AS LAST_ACTIVE
+                FROM SALES.RAVEN.A360_SI_USER_DAY_FACT_VIEW
+                WHERE SALESFORCE_ACCOUNT_ID = %s
+                  AND DS >= DATEADD(day, -28, CURRENT_DATE())
+                GROUP BY 1
+            )
+            SELECT
+                COUNT(*) AS USERS_28D,
+                COALESCE(SUM(PROMPTS), 0) AS REQUESTS_28D,
+                COALESCE(SUM(SESSIONS), 0) AS SESSIONS_28D,
+                MAX(LAST_ACTIVE)::VARCHAR AS LAST_ACTIVE,
+                ROUND(AVG(DAYS), 1) AS AVG_DAYS_PER_USER,
+                ROUND(AVG(PROMPTS), 0) AS AVG_PROMPTS_PER_USER
+            FROM per_user
+            """,
+            (account_id,),
+        )
+        si_row = cur.fetchone() or {}
+
+        def _coco(origin: str) -> dict:
+            r = coco_rows.get(origin) or {}
+            return {
+                "users_28d": int(r.get("USERS_28D") or 0),
+                "requests_28d": int(r.get("REQUESTS_28D") or 0),
+                "sessions_28d": int(r.get("SESSIONS_28D") or 0),
+                "last_active": r.get("LAST_ACTIVE"),
+                "avg_days_per_user": float(r.get("AVG_DAYS_PER_USER") or 0),
+                "avg_prompts_per_user": int(r.get("AVG_PROMPTS_PER_USER") or 0),
+            }
+
+        surfaces = {
+            "cli": _coco("cli"),
+            "desktop": _coco("desktop"),
+            "snowsight": _coco("ui"),
+            "si": {
+                "users_28d": int(si_row.get("USERS_28D") or 0),
+                "requests_28d": int(si_row.get("REQUESTS_28D") or 0),
+                "sessions_28d": int(si_row.get("SESSIONS_28D") or 0),
+                "last_active": si_row.get("LAST_ACTIVE"),
+                "avg_days_per_user": float(si_row.get("AVG_DAYS_PER_USER") or 0),
+                "avg_prompts_per_user": int(si_row.get("AVG_PROMPTS_PER_USER") or 0),
+            },
+        }
+
+        # Headline totals = sum of distinct users per surface (different ID spaces, so this is "user records")
+        total_users_28d = sum(s["users_28d"] for s in surfaces.values())
+        total_requests_28d = sum(s["requests_28d"] for s in surfaces.values())
+
+        # Weekly trend across CoCo surfaces (8 weeks)
+        cur.execute(
+            """
+            SELECT
+                DATE_TRUNC('week', DATE_AT)::DATE::VARCHAR AS WEEK_START,
+                LOWER(ORIGIN) AS ORIGIN,
+                COUNT(DISTINCT USER_NAME) AS USERS,
+                COALESCE(SUM(REQUEST_COUNT), 0) AS REQUESTS
+            FROM SALES.RAVEN.A360_COCO_USAGE_USER_DAILY_VIEW
+            WHERE SALESFORCE_ACCOUNT_ID = %s
+              AND DATE_AT >= DATEADD(day, -56, CURRENT_DATE())
+            GROUP BY 1, 2
+            """,
+            (account_id,),
+        )
+        coco_weekly = cur.fetchall()
+
+        # Weekly trend for SI
+        cur.execute(
+            """
+            SELECT
+                DATE_TRUNC('week', DS)::DATE::VARCHAR AS WEEK_START,
+                COUNT(DISTINCT USER_ID) AS USERS,
+                COALESCE(SUM(NUM_REQUESTS), 0) AS REQUESTS
+            FROM SALES.RAVEN.A360_SI_USER_DAY_FACT_VIEW
+            WHERE SALESFORCE_ACCOUNT_ID = %s
+              AND DS >= DATEADD(day, -56, CURRENT_DATE())
+            GROUP BY 1
+            """,
+            (account_id,),
+        )
+        si_weekly = cur.fetchall()
+
+        weeks: dict[str, dict] = {}
+
+        def _ensure(week: str) -> dict:
+            if week not in weeks:
+                weeks[week] = {
+                    "week_start": week,
+                    "cli_users": 0, "desktop_users": 0, "snowsight_users": 0, "si_users": 0,
+                    "cli_requests": 0, "desktop_requests": 0, "snowsight_requests": 0, "si_requests": 0,
+                }
+            return weeks[week]
+
+        _ORIGIN_TO_KEY = {"cli": "cli", "desktop": "desktop", "ui": "snowsight"}
+        for r in coco_weekly:
+            wk = r.get("WEEK_START")
+            origin = (r.get("ORIGIN") or "").lower()
+            key = _ORIGIN_TO_KEY.get(origin)
+            if not wk or not key:
+                continue
+            row = _ensure(wk)
+            row[f"{key}_users"] = int(r.get("USERS") or 0)
+            row[f"{key}_requests"] = int(r.get("REQUESTS") or 0)
+
+        for r in si_weekly:
+            wk = r.get("WEEK_START")
+            if not wk:
+                continue
+            row = _ensure(wk)
+            row["si_users"] = int(r.get("USERS") or 0)
+            row["si_requests"] = int(r.get("REQUESTS") or 0)
+
+        weekly_trend = sorted(weeks.values(), key=lambda x: x["week_start"])
+
+        result = {
+            "surfaces": surfaces,
+            "total_users_28d": total_users_28d,
+            "total_requests_28d": total_requests_28d,
+            "weekly_trend": weekly_trend,
+        }
+        cache_set(cache_key, result, ttl=600)
+        return result
 
     def get_security_posture(self, account_id: str) -> dict:
         cur = self._cursor()
@@ -3738,6 +4327,9 @@ def _row_to_account(r: dict) -> Account:
         ae_name=r.get("AE_NAME"),
         engagement_start_date=_d(r.get("ENGAGEMENT_START_DATE")),
         rolloff_date=_d(r.get("ROLLOFF_DATE")),
+        primary_ace_email=r.get("PRIMARY_ACE_EMAIL"),
+        coverage_ace_email=r.get("COVERAGE_ACE_EMAIL"),
+        coverage_until=_d(r.get("COVERAGE_UNTIL")),
     )
 
 

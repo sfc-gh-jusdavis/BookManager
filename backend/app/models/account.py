@@ -35,6 +35,10 @@ class Account(BaseModel):
     ae_name: Optional[str] = None
     engagement_start_date: Optional[date] = None
     rolloff_date: Optional[date] = None
+    primary_ace_email: Optional[str] = None
+    coverage_ace_email: Optional[str] = None
+    coverage_until: Optional[date] = None
+    sf_team_aces: list[str] = []
 
 
 class ManualMeeting(BaseModel):

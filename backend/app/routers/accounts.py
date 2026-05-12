@@ -218,6 +218,9 @@ class UpdateAccountFieldsRequest(BaseModel):
     no_recording: Optional[bool] = None
     engagement_start_date: Optional[str] = None
     rolloff_date: Optional[str] = None
+    primary_ace_email: Optional[str] = None
+    coverage_ace_email: Optional[str] = None
+    coverage_until: Optional[str] = None
 
 
 VALID_STATUSES = {"not started", "active", "complete", "stopped", "paused"}
@@ -235,7 +238,18 @@ async def update_account_fields(
         raise HTTPException(status_code=422, detail=f"Invalid status: {body.status}")
     if body.engagement_status is not None and body.engagement_status not in VALID_ENGAGEMENTS:
         raise HTTPException(status_code=422, detail=f"Invalid engagement_status: {body.engagement_status}")
-    data.update_account_fields(account_id, body.status, body.engagement_status, body.no_recording, body.engagement_start_date, body.rolloff_date, updated_by=user.email)
+    data.update_account_fields(
+        account_id,
+        body.status,
+        body.engagement_status,
+        body.no_recording,
+        body.engagement_start_date,
+        body.rolloff_date,
+        body.primary_ace_email,
+        body.coverage_ace_email,
+        body.coverage_until,
+        updated_by=user.email,
+    )
     return {"account_id": account_id, "ok": True}
 
 
@@ -496,6 +510,56 @@ async def get_account_timeline(
     return data.get_account_timeline(account_id)
 
 
+# ----------------------------------------------------------------------
+# Use Case Updates (weekly Salesforce-paste-ready suggestions)
+# ----------------------------------------------------------------------
+
+
+class UseCaseUpdateEditRequest(BaseModel):
+    text: str
+
+
+@router.get("/accounts/{account_id}/use-case-updates")
+async def get_account_use_case_updates(
+    account_id: str,
+    my_only: bool = True,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    updates = data.get_use_case_updates(account_id, user.email, my_only=my_only)
+    return {"updates": updates}
+
+
+@router.post("/accounts/{account_id}/use-case-updates/refresh")
+async def refresh_account_use_case_updates(
+    account_id: str,
+    my_only: bool = True,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    updates = data.regenerate_use_case_updates(account_id, user.email, my_only=my_only)
+    return {"updates": updates}
+
+
+@router.post("/use-case-updates/{use_case_id}/regenerate")
+async def regenerate_use_case_update(
+    use_case_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    return data.regenerate_one_use_case_update(use_case_id, user.email)
+
+
+@router.post("/use-case-updates/{use_case_id}")
+async def save_use_case_update(
+    use_case_id: str,
+    body: UseCaseUpdateEditRequest,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    return data.update_use_case_update_text(use_case_id, body.text, user.email)
+
+
 @router.get("/accounts/{account_id}/meetings", response_model=list[MeetingActivity])
 async def get_account_meetings(
     account_id: str,
@@ -536,6 +600,15 @@ async def get_account_adoption(
     data: SnowflakeDataService = Depends(get_data_service),
 ) -> dict:
     return data.get_account_adoption(account_id=account_id)
+
+
+@router.get("/accounts/{account_id}/ai-adoption")
+async def get_ai_adoption(
+    account_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> dict:
+    return data.get_ai_adoption(account_id=account_id)
 
 
 @router.get("/accounts/{account_id}/security-posture")
