@@ -11,6 +11,19 @@ This repo must remain free of real PII in tracked source.
 - The `pii-check` CI job blocks any PR that introduces internal company email domains (`snowflake.com`, `sfc.com`) outside the snowflake_service.py allowlist.
 - Internal SQL schema names (`SALES.RAVEN.*`, `FIVETRAN.SALESFORCE.*`) are kept; they expose architecture but no data values.
 
+## Working Conventions
+
+This repo follows the conventions in [WORKFLOW.md](./WORKFLOW.md). Highlights:
+
+- **No direct commits to main.** All changes go through a branch + PR.
+- **Branch naming:** `feat/`, `fix/`, `chore/`, `refactor/`, `docs/`, `revert/` prefixes.
+- **Commit messages:** imperative mood, present tense.
+- **`git add`** with explicit paths only. Never `git add .` or `git add -A`.
+- **Self-review** before merging. Read your own diff against Karpathy's 4 principles
+  ([docs/workflow/karpathy-coding-principles.md](docs/workflow/karpathy-coding-principles.md)).
+
+When in doubt, read [WORKFLOW.md](./WORKFLOW.md).
+
 ## Architecture
 
 - **Frontend**: Next.js 16 (App Router) — `bkmng-next/`, port 3001
