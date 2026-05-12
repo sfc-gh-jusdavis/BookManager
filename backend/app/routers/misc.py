@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Query
-from typing import Optional
+from fastapi import APIRouter, Depends
 
 from app.auth.dependencies import get_current_user, MOCK_USERS
 from app.models.gong import GongCall

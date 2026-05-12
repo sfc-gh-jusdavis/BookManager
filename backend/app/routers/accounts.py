@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Body, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
-from app.models.account import Account, UseCase, PSNote, MeetingActivity, EmailActivity, ManualMeeting
+from app.models.account import Account, UseCase, MeetingActivity, EmailActivity, ManualMeeting
 from app.models.credit import AccountFeatureUsage, AccountRevenueSummary, CreditConsumption
 from app.models.tracking import AccountTracking, SetTrackingRequest
 from app.models.user import CurrentUser, UserRole
