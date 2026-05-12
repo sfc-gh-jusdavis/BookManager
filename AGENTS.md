@@ -192,3 +192,25 @@ SPCS containers are network-isolated. The service has an External Access Integra
 ## Extended Context
 
 For full operational details, known bugs, table schemas, SP details, and session history, see `/memories/bookmanager-ops.md` and `/memories/bookmanager_progress.md`.
+
+## Continuous Improvement (Pattern 13)
+
+When the agent does something the user finds wrong, useless, or surprising:
+
+1. The user asks "why did you do that?"
+2. The agent explains its reasoning
+3. The user decides: was the reasoning wrong, or was the prompt missing context?
+4. Update the relevant artifact:
+   - **BookManager-specific quirk** → this file (AGENTS.md)
+   - **Repeated behavior across many projects** → a skill in `~/.cortex/skills/`
+   - **Common task that should be one keystroke** → `.cortex/commands/<name>.md`
+   - **Daily-cadence rule** → [WORKFLOW.md](./WORKFLOW.md)
+5. Verify on the next similar task: did the change land?
+
+Examples that would trigger an AGENTS.md update:
+- Agent uses `git add .` despite the explicit-paths convention → strengthen the Working Conventions reminder
+- Agent skips a smoke test before opening a PR → add explicit reminder
+- Agent reintroduces a hardcoded identity reference → already CI-enforced, but worth a note
+- Agent splits a focused change into too many commits → update WORKFLOW.md commit-granularity guidance
+
+The agent itself should suggest concrete edits when it notices it has been corrected on the same thing twice in a session.

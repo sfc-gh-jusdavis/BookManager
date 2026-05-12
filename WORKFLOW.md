@@ -342,3 +342,87 @@ gh pr ready 42                    # mark draft PR as ready for review
 gh issue list                     # all open issues
 gh repo view --web                # open the repo in browser
 ```
+
+---
+
+## Worktrees (AI-Dev Pattern 5)
+
+Run multiple Cortex Code Desktop sessions in parallel, each in a different folder, each on a different branch — sharing the same git history. Agents cannot accidentally edit each other's work because they live in physically separate directories.
+
+### Setup
+
+```bash
+cd ~/projects/BookManager
+
+# Create a worktree for branch feat/big-feature in a sibling folder
+git worktree add ../BookManager-feat-X feat/big-feature
+
+# Create another for a hotfix
+git worktree add ../BookManager-fix-Y fix/critical-bug
+```
+
+You now have:
+
+```
+~/projects/
+  BookManager/              # main worktree (branch: main)
+  BookManager-feat-X/       # worktree (branch: feat/big-feature)
+  BookManager-fix-Y/        # worktree (branch: fix/critical-bug)
+```
+
+Each is a full working copy. They share the same `.git` repo via a `.git` file pointing to the main one.
+
+### Using with Cortex Code Desktop
+
+1. Open one CCD window in `~/projects/BookManager-feat-X/`
+2. Open another CCD window in `~/projects/BookManager-fix-Y/`
+3. Each window runs an independent agent session
+4. Agents cannot conflict — they're in different folders
+
+### When to use
+
+- Long-running feature AND a hotfix in flight
+- One agent exploring while another implements
+- Two independent features developed in parallel
+
+Don't bother for:
+- Simple sequential work (one branch is enough)
+- Tasks finishing in under an hour
+
+### Cleanup
+
+```bash
+cd ~/projects/BookManager
+git worktree remove ../BookManager-feat-X
+```
+
+Branch remains; only the working folder is removed.
+
+---
+
+## Self-Review with Agents (AI-Dev Pattern 10)
+
+Use the diff in your own PR as line-level context for an agent. Leave comments on specific lines describing what should change, then ask the agent to address them.
+
+### Workflow
+
+1. Open your PR per the Shipping section above
+2. Open the PR in browser via `gh pr view --web` or read inline via `gh pr view <N>`
+3. Read your diff. On any line that needs changing, leave a review comment:
+   ```
+   "This loop allocates a new list every iteration. Refactor to reuse."
+   ```
+4. Repeat for every issue you spot
+5. In Cortex Code Desktop, run:
+   ```bash
+   gh pr view <N> --json reviewComments | jq '.reviewComments[] | {path, line, body}'
+   ```
+6. Tell the agent: "Address each of these review comments. After each fix, push and we'll see CI."
+
+### Why this works
+
+The agent sees BOTH the diff context AND your specific instructions tied to specific lines. Much stronger signal than "the PR has issues, fix them."
+
+### Multi-reviewer (Pattern 11)
+
+For larger or higher-risk PRs (300+ lines, auth/data integrity, anything you're unsure about), invoke the `/multi-review` slash command. It spawns three parallel subagents — Correctness, Simplicity (Karpathy P2), Surgical Changes (Karpathy P3) — and consolidates findings into a single PR review comment.
