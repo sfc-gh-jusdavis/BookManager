@@ -192,6 +192,14 @@ export function useUpcomingMeetings(accountId: string, limit = 5) {
   });
 }
 
+export function useAllUpcomingMeetings(limit = 15) {
+  return useQuery({
+    queryKey: ["all-upcoming-meetings", limit],
+    queryFn: () => apiFetch<UpcomingMeeting[]>(`/api/user/upcoming-meetings?limit=${limit}`),
+    ...DEFAULT_OPTS,
+  });
+}
+
 export function useAccountResources(accountId: string) {
   return useQuery({ queryKey: ["account-resources", accountId], queryFn: () => apiFetch(`/api/accounts/${accountId}/resources`), ...DEFAULT_OPTS, enabled: !!accountId });
 }
@@ -1513,16 +1521,50 @@ export function useDeleteSecurityOverride(accountId: string) {
   const qc = useQueryClient();
   return useMutation<unknown, unknown, { milestone_id: string }>({
     mutationFn: async ({ milestone_id }) => {
-      const mockUserId = typeof window !== "undefined" ? (localStorage.getItem("bkmng-mock-user-id") || "jusdavis") : "jusdavis";
+      const mockUserId = typeof window !== "undefined" ? (localStorage.getItem("bkmng-mock-user-id") || "") : "";
+      const headers: Record<string, string> = {};
+      if (mockUserId) headers["X-Mock-User"] = mockUserId;
       const res = await fetch(`/api/accounts/${accountId}/security-posture/${milestone_id}/override`, {
         method: "DELETE",
-        headers: { "X-Mock-User": mockUserId },
+        headers,
       });
       if (!res.ok && res.status !== 204) throw new Error(`DELETE override → ${res.status}`);
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["security-posture", accountId] });
     },
+  });
+}
+
+export type ImpactMetricRow = {
+  ACCOUNT_NAME: string | null;
+  THEATER: string | null;
+  SEGMENT: string | null;
+  TIER: string | null;
+  DAYS_SINCE_ASSIGNED: number | null;
+  PRE_ACE_RUN_RATE: number | null;
+  CURRENT_RUN_RATE: number | null;
+  RUN_RATE_DELTA: number | null;
+  RUN_RATE_GROWTH_PCT: number | null;
+  INCREMENTAL_REVENUE: number | null;
+  TOTAL_USE_CASES_ASSIGNED: number | null;
+  IN_PURSUIT_USE_CASE_CNT: number | null;
+  IN_IMPLEMENTATION_USE_CASE_CNT: number | null;
+  TECH_WIN_USE_CASE_CNT: number | null;
+  WON_USE_CASE_CNT: number | null;
+  TOTAL_MEETINGS_WITH_ACCOUNT_ENGINEER: number | null;
+  LAST_MEETING_WITH_ACCOUNT_DATE: string | null;
+  WON_EACV: number | null;
+  TECH_WIN_EACV: number | null;
+  TOTAL_MEETINGS_L90D: number | null;
+};
+
+export function useMyImpactMetrics() {
+  return useQuery<ImpactMetricRow[]>({
+    queryKey: ["user-impact-metrics"],
+    queryFn: () => apiFetch<ImpactMetricRow[]>("/api/user/impact-metrics"),
+    staleTime: 3_600_000,
+    gcTime: 3_600_000,
   });
 }
 // ===== Feature Flags (admin) =====

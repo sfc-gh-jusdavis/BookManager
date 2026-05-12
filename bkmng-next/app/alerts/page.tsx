@@ -14,6 +14,7 @@ import {
 import { Bell, ChevronDown, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { AlertRow } from "@/components/alerts/AlertRow";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type CategoryKey = "use_case" | "engagement" | "consumption" | "support" | "security" | "intelligence" | "other";
 
@@ -71,7 +72,7 @@ function signalCategory(signalType: string, prefsMap: Map<string, AlertPreferenc
   return "other";
 }
 
-export default function AlertsPage() {
+function AlertsPage() {
   const { data: alerts, isLoading } = useAlerts();
   const { data: alertCountData } = useAlertCount();
   const { data: prefs } = useAlertPreferences();
@@ -272,3 +273,5 @@ export default function AlertsPage() {
     </div>
   );
 }
+
+export default withFlagGate(AlertsPage, "page_alerts");

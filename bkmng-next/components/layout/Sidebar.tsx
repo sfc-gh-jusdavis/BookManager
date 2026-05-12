@@ -16,6 +16,7 @@ import {
   GanttChart,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
+import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { cn } from "@/lib/utils";
 import { useAlertCount } from "@/hooks/useApi";
 
@@ -49,12 +50,15 @@ function getInitials(name: string): string {
 export function Sidebar() {
   const pathname = usePathname();
   const { currentUser, isSpcs, switchUser, mockUsers } = useAuth();
+  const adminCostsEnabled = useFeatureFlag("admin_costs_page");
   const { data: alertCountData } = useAlertCount();
   const unreadCount = alertCountData?.count ?? 0;
 
-  const visibleItems = NAV_ITEMS.filter(
-    (item) => !item.adminOnly || currentUser?.is_admin
-  );
+  const visibleItems = NAV_ITEMS.filter((item) => {
+    if (item.adminOnly && !currentUser?.is_admin) return false;
+    if (item.href === "/admin/costs" && !adminCostsEnabled) return false;
+    return true;
+  });
 
   const initials = currentUser ? getInitials(currentUser.display_name) : "??";
   const roleLabel = currentUser?.role === "acem" ? "Manager" : "ACE";

@@ -1,11 +1,12 @@
 "use client";
 
 import { useAuth } from "@/context/AuthContext";
+import { withFlagGate } from "@/components/ui/flag-gate";
 import { ACEDashboard } from "@/components/dashboard/ACEDashboard";
 import { ACEMDashboard } from "@/components/dashboard/ACEMDashboard";
 import { Skeleton } from "@/components/ui/skeleton";
 
-export default function DashboardPage() {
+function DashboardPage() {
   const { currentUser, isLoading } = useAuth();
 
   if (isLoading) {
@@ -23,3 +24,5 @@ export default function DashboardPage() {
   if (currentUser?.role === "acem") return <ACEMDashboard />;
   return <ACEDashboard />;
 }
+
+export default withFlagGate(DashboardPage, "page_dashboard");

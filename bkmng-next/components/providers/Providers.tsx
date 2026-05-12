@@ -2,6 +2,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AuthProvider } from "@/context/AuthContext";
+import { FeatureFlagProvider } from "@/context/FeatureFlagContext";
 import { TooltipProvider } from "@/components/ui/tooltip";
 
 export const queryClient = new QueryClient({
@@ -14,7 +15,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
-        <TooltipProvider>{children}</TooltipProvider>
+        <FeatureFlagProvider>
+          <TooltipProvider>{children}</TooltipProvider>
+        </FeatureFlagProvider>
       </AuthProvider>
     </QueryClientProvider>
   );

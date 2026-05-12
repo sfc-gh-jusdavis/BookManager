@@ -2,6 +2,7 @@
 
 import { useRef, useState, useCallback, useEffect } from "react";
 import { Sparkles, Send, Loader2, RotateCcw } from "lucide-react";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 function ThinkingDots() {
   return (
@@ -81,7 +82,7 @@ async function* streamChat(
   }
 }
 
-export default function ACEPage() {
+function ACEPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
@@ -248,3 +249,5 @@ export default function ACEPage() {
     </div>
   );
 }
+
+export default withFlagGate(ACEPage, "page_ace");

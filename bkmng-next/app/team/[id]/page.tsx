@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, Building2, AlertTriangle, CheckCircle2, Clock } from "lucide-react";
 import { useAccounts, useUseCases, useAceDisplayNames } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type Account = { account_id: string; account_name: string; status: string; engagement_status: string; ace_assigned: string; total_credits_allocated: number };
 type UseCase = { use_case_id: string; account_id: string; account_name: string; use_case_name: string; stage: string; status: string; target_go_live_date: string | null };
@@ -31,7 +32,7 @@ function creditsShort(n: number): string {
   return `${Math.round(n / 1000)}K`;
 }
 
-export default function TeamMemberPage() {
+function TeamMemberPage() {
   const params = useParams<{ id: string }>();
   const aceId = params?.id ?? "";
 
@@ -183,3 +184,5 @@ export default function TeamMemberPage() {
     </div>
   );
 }
+
+export default withFlagGate(TeamMemberPage, "page_team_detail");

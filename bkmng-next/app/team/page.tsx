@@ -6,6 +6,7 @@ import { BarChart3, Users, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useAccounts, useUseCases, useAceDisplayNames } from "@/hooks/useApi";
 import { Card, CardContent } from "@/components/ui/card";
+import { withFlagGate } from "@/components/ui/flag-gate";
 
 type Account = { account_id: string; account_name: string; status: string; ace_assigned: string };
 type UseCase = { use_case_id: string; account_id: string; stage: string; status: string };
@@ -17,7 +18,7 @@ function StatusDot({ status }: { status: string }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full shrink-0 ${cls}`} title={status} />;
 }
 
-export default function TeamPage() {
+function TeamPage() {
   const { currentUser } = useAuth();
   const isManager = currentUser?.role === "acem";
 
@@ -118,3 +119,5 @@ export default function TeamPage() {
     </div>
   );
 }
+
+export default withFlagGate(TeamPage, "page_team");
