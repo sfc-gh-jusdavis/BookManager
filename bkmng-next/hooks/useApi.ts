@@ -1391,3 +1391,72 @@ export function useDeleteSecurityOverride(accountId: string) {
     },
   });
 }
+// ===== Feature Flags (admin) =====
+
+export type FlagOverride = {
+  flag_key: string;
+  target_type: "user" | "role";
+  target_value: string;
+  enabled: boolean;
+};
+
+export type FlagWithOverrides = {
+  flag_key: string;
+  description: string | null;
+  category: string | null;
+  default_enabled: boolean;
+  overrides: FlagOverride[];
+};
+
+export function useAdminFlags() {
+  return useQuery<FlagWithOverrides[]>({
+    queryKey: ["feature-flags-admin"],
+    queryFn: () => apiFetch<FlagWithOverrides[]>("/api/feature-flags/admin"),
+    staleTime: 30_000,
+  });
+}
+
+export function useUpsertFlag() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, { flag_key: string; description?: string | null; category?: string | null; default_enabled: boolean }>({
+    mutationFn: ({ flag_key, ...body }) =>
+      apiFetch(`/api/feature-flags/admin/${flag_key}`, {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feature-flags-admin"] });
+      qc.invalidateQueries({ queryKey: ["feature-flags"] });
+    },
+  });
+}
+
+export function useUpsertFlagOverride() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, { flag_key: string; target_type: "user" | "role"; target_value: string; enabled: boolean }>({
+    mutationFn: ({ flag_key, ...body }) =>
+      apiFetch(`/api/feature-flags/admin/${flag_key}/overrides`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feature-flags-admin"] });
+      qc.invalidateQueries({ queryKey: ["feature-flags"] });
+    },
+  });
+}
+
+export function useDeleteFlagOverride() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, { flag_key: string; target_type: string; target_value: string }>({
+    mutationFn: ({ flag_key, target_type, target_value }) =>
+      apiFetch(`/api/feature-flags/admin/${flag_key}/overrides/${target_type}/${encodeURIComponent(target_value)}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["feature-flags-admin"] });
+      qc.invalidateQueries({ queryKey: ["feature-flags"] });
+    },
+  });
+}
+

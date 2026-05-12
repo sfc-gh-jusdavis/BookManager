@@ -1,0 +1,13 @@
+-- TABLE: TEMP.JUSDAVIS.BKMNG_FEATURE_FLAGS
+-- Stores feature flag definitions. Synced from backend/app/feature_flags/registry.py
+-- via scripts/sync_feature_flags.py.
+
+create or replace TABLE BKMNG_FEATURE_FLAGS (
+    FLAG_KEY VARCHAR(16777216) NOT NULL,
+    DESCRIPTION VARCHAR(16777216),
+    CATEGORY VARCHAR(16777216),
+    DEFAULT_ENABLED BOOLEAN DEFAULT FALSE,
+    CREATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP(),
+    UPDATED_AT TIMESTAMP_NTZ(9) DEFAULT CURRENT_TIMESTAMP(),
+    primary key (FLAG_KEY)
+);
