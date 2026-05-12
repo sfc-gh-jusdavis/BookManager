@@ -132,6 +132,10 @@ export type Account = {
   ae_name?: string | null;
   engagement_start_date?: string | null;
   rolloff_date?: string | null;
+  primary_ace_email?: string | null;
+  coverage_ace_email?: string | null;
+  coverage_until?: string | null;
+  sf_team_aces?: string[];
 };
 
 export function useAccounts() {
@@ -355,7 +359,7 @@ export function useDeleteAccountTracking(accountId: string) {
 
 export function useUpdateAccountFields(accountId: string) {
   const qc = useQueryClient();
-  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean; engagement_start_date?: string | null; rolloff_date?: string | null }, { previousDetail: unknown; previousList: unknown } | undefined>({
+  return useMutation<unknown, unknown, { status?: string; engagement_status?: string; no_recording?: boolean; engagement_start_date?: string | null; rolloff_date?: string | null; primary_ace_email?: string | null; coverage_ace_email?: string | null; coverage_until?: string | null }, { previousDetail: unknown; previousList: unknown } | undefined>({
     mutationFn: (body) =>
       apiFetch(`/api/accounts/${accountId}`, {
         method: "PATCH",
@@ -388,6 +392,22 @@ export function useUpdateAccountFields(accountId: string) {
 
 export function useTrackedAccounts() {
   return useQuery({ queryKey: ["tracked-accounts"], queryFn: () => apiFetch<Record<string, unknown>[]>("/api/accounts-tracked"), ...DEFAULT_OPTS });
+}
+
+export type AppUser = {
+  user_id: string;
+  email: string;
+  display_name: string;
+  role: "ace" | "acem";
+  team_id?: string | null;
+};
+
+export function useAllUsers() {
+  return useQuery<AppUser[]>({
+    queryKey: ["all-users"],
+    queryFn: () => apiFetch<AppUser[]>("/api/auth/users"),
+    staleTime: 5 * 60_000,
+  });
 }
 
 export type SignalCountEntry = { high: number; medium: number; low: number; total: number };
@@ -636,6 +656,45 @@ export function useAccountAdoption(accountId: string) {
   return useQuery<AccountAdoptionData>({
     queryKey: ["account-adoption", accountId],
     queryFn: () => apiFetch<AccountAdoptionData>(`/api/accounts/${accountId}/adoption`),
+    ...DEFAULT_OPTS,
+    enabled: !!accountId,
+  });
+}
+
+export type AISurfaceKey = "cli" | "desktop" | "snowsight" | "si";
+
+export type AISurfaceMetrics = {
+  users_28d: number;
+  requests_28d: number;
+  sessions_28d: number;
+  last_active: string | null;
+  avg_days_per_user: number;
+  avg_prompts_per_user: number;
+};
+
+export type AIAdoptionWeek = {
+  week_start: string;
+  cli_users: number;
+  desktop_users: number;
+  snowsight_users: number;
+  si_users: number;
+  cli_requests: number;
+  desktop_requests: number;
+  snowsight_requests: number;
+  si_requests: number;
+};
+
+export type AIAdoptionData = {
+  surfaces: Record<AISurfaceKey, AISurfaceMetrics>;
+  total_users_28d: number;
+  total_requests_28d: number;
+  weekly_trend: AIAdoptionWeek[];
+};
+
+export function useAIAdoption(accountId: string) {
+  return useQuery<AIAdoptionData>({
+    queryKey: ["ai-adoption", accountId],
+    queryFn: () => apiFetch<AIAdoptionData>(`/api/accounts/${accountId}/ai-adoption`),
     ...DEFAULT_OPTS,
     enabled: !!accountId,
   });
@@ -953,6 +1012,81 @@ export function useDeleteTimelineContext(accountId: string) {
       qc.invalidateQueries({ queryKey: ["account-timeline", accountId] });
       qc.invalidateQueries({ queryKey: ["manual-meetings", accountId] });
       qc.invalidateQueries({ queryKey: ["account-context", accountId] });
+    },
+  });
+}
+
+// --- Use Case Updates ---------------------------------------------------
+
+export type UseCaseUpdate = {
+  use_case_id: string;
+  account_id: string;
+  use_case_name: string;
+  stage: string;
+  ace_email: string | null;
+  week_of: string | null;
+  update_text: string;
+  status: "suggested" | "edited" | "no_update" | string;
+  basis_summary: string;
+  source_count_notes: number;
+  source_count_gong: number;
+  source_count_timeline: number;
+  is_edited: boolean;
+  generated_at: string | null;
+  last_modified_at: string | null;
+  last_modified_by: string | null;
+};
+
+export function useUseCaseUpdates(accountId: string) {
+  return useQuery<{ updates: UseCaseUpdate[] }>({
+    queryKey: ["use-case-updates", accountId],
+    queryFn: () =>
+      apiFetch<{ updates: UseCaseUpdate[] }>(
+        `/api/accounts/${accountId}/use-case-updates`
+      ),
+    enabled: !!accountId,
+    staleTime: 60_000,
+  });
+}
+
+export function useRefreshUseCaseUpdates(accountId: string) {
+  const qc = useQueryClient();
+  return useMutation<{ updates: UseCaseUpdate[] }, unknown, void>({
+    mutationFn: () =>
+      apiFetch<{ updates: UseCaseUpdate[] }>(
+        `/api/accounts/${accountId}/use-case-updates/refresh`,
+        { method: "POST" }
+      ),
+    onSuccess: (data) => {
+      qc.setQueryData(["use-case-updates", accountId], data);
+    },
+  });
+}
+
+export function useRegenerateUseCaseUpdate(accountId: string) {
+  const qc = useQueryClient();
+  return useMutation<UseCaseUpdate, unknown, string>({
+    mutationFn: (useCaseId) =>
+      apiFetch<UseCaseUpdate>(
+        `/api/use-case-updates/${useCaseId}/regenerate`,
+        { method: "POST" }
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["use-case-updates", accountId] });
+    },
+  });
+}
+
+export function useSaveUseCaseUpdate(accountId: string) {
+  const qc = useQueryClient();
+  return useMutation<UseCaseUpdate, unknown, { useCaseId: string; text: string }>({
+    mutationFn: ({ useCaseId, text }) =>
+      apiFetch<UseCaseUpdate>(`/api/use-case-updates/${useCaseId}`, {
+        method: "POST",
+        body: JSON.stringify({ text }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["use-case-updates", accountId] });
     },
   });
 }
