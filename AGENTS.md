@@ -2,6 +2,15 @@
 
 Read this file before planning or executing any task on this project.
 
+## Privacy Rule (HIGH PRIORITY)
+
+This repo must remain free of real PII in tracked source.
+
+- Mock-user data lives in `BKMNG_USERS` (Snowflake table), not in code.
+- Identity-specific config (default user, git author, etc.) lives in `backend/.env` (gitignored). The repo does not assume a specific contributor.
+- The `pii-check` CI job blocks any PR that introduces internal company email domains (`snowflake.com`, `sfc.com`) outside the snowflake_service.py allowlist.
+- Internal SQL schema names (`SALES.RAVEN.*`, `FIVETRAN.SALESFORCE.*`) are kept; they expose architecture but no data values.
+
 ## Architecture
 
 - **Frontend**: Next.js 16 (App Router) — `bkmng-next/`, port 3001
@@ -83,7 +92,7 @@ make deploy            # build + push + ALTER SERVICE (one command)
 - Local dev: `X-Mock-User: <username>` header (always accepted)
 - SPCS: PAT-based auth via `SNOWFLAKE_PAT` env var (secret: `BKMNG_SNOWHOUSE_PAT`)
 - User table: `BKMNG_USERS` (19 users), read by `/auth/users` endpoint
-- Default dev user: `jusdavis` (ACE role, admin)
+- Default dev user: configured via `LOCAL_DEFAULT_USER_ID` env var (or first row in BKMNG_USERS)
 
 ## Data Pipeline Governance
 
@@ -164,7 +173,7 @@ SPCS containers are network-isolated. The service has an External Access Integra
 
 - Remote: `https://github.com/sfc-gh-jusdavis/BookManager` (private)
 - Branch strategy: trunk-based, `main` is always deployable
-- Git config: `j.davis@snowflake.com` / `Justin Davis`
+- Git config: set your own; the repo does not assume a specific contributor
 - Archived artifacts: `_archive/` — old `frontend/` (Vite), old `sql/`, `snowflake/analytics/`, `snowflake/views/`, old `bkmng-spec.yaml`, `nginx-spcs.conf`, and `docs/` plans live here. **Do not read or modify files under `_archive/`** — they are preserved for reference only and are excluded from Docker builds.
 
 ## Extended Context

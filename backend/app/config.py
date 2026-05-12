@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     spcs_mode: bool = False
     admin_users: str = ""
     spcs_default_user_id: str = "ace-jane"
+    local_default_user_id: Optional[str] = None
 
     snowflake_connection_name: Optional[str] = None
     snowflake_account: Optional[str] = None

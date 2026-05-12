@@ -40,30 +40,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [mockUsers, setMockUsers] = useState<CurrentUser[]>([]);
   const [mockUserId, setMockUserId] = useState<string>(() => {
-    if (typeof window === "undefined") return "jusdavis";
-    return localStorage.getItem(MOCK_USER_KEY) || "jusdavis";
+    if (typeof window === "undefined") return "";
+    return localStorage.getItem(MOCK_USER_KEY) || "";
   });
 
   const loadUser = useCallback(
     async (uid: string) => {
       try {
-        const [mode, user] = await Promise.all([
-          apiFetch<AuthMode>("/api/auth/mode"),
-          apiFetch<CurrentUser>("/api/auth/me", uid),
-        ]);
+        const mode = await apiFetch<AuthMode>("/api/auth/mode");
         const users = await apiFetch<CurrentUser[]>("/api/auth/mock-users").catch(() => []);
         setIsSpcs(mode.spcs_mode);
-        setCurrentUser(user);
         setMockUsers(users);
+
+        const resolvedUid = uid || users[0]?.user_id || "";
+        if (!resolvedUid) {
+          setCurrentUser(null);
+          return;
+        }
+        if (resolvedUid !== uid) {
+          localStorage.setItem(MOCK_USER_KEY, resolvedUid);
+          setMockUserId(resolvedUid);
+        }
+        const user = await apiFetch<CurrentUser>("/api/auth/me", resolvedUid);
+        setCurrentUser(user);
       } catch {
-        setCurrentUser({
-          user_id: "jusdavis",
-          email: "jusdavis@snowflake.com",
-          display_name: "Justin Davis",
-          role: "acem",
-          team_id: "team-west",
-          is_admin: true,
-        });
+        setCurrentUser(null);
       } finally {
         setIsLoading(false);
       }

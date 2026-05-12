@@ -1,29 +1,10 @@
-from fastapi import Header
+import logging
+from fastapi import Header, HTTPException
 from typing import Optional
 from app.models.user import CurrentUser, UserRole
 from app.config import settings
 
-MOCK_USERS: dict[str, CurrentUser] = {
-    "jusdavis":     CurrentUser(user_id="jusdavis",     email="j.davis@snowflake.com",            display_name="Justin Davis",       role=UserRole.ACE),
-    "ufitolo":      CurrentUser(user_id="ufitolo",      email="ufi.olakpe@snowflake.com",          display_name="Ufi Olakpe",         role=UserRole.ACEM),
-    "gilee":        CurrentUser(user_id="gilee",        email="gilbert.lee@snowflake.com",         display_name="Gilbert Lee",        role=UserRole.ACEM),
-    "dbaccus":      CurrentUser(user_id="dbaccus",      email="daunte.baccus@snowflake.com",       display_name="Daunte Baccus",      role=UserRole.ACEM, is_admin=True),
-    "aardestani":   CurrentUser(user_id="aardestani",   email="ali.ardestani@snowflake.com",       display_name="Ali Ardestani",      role=UserRole.ACE),
-    "aflors":       CurrentUser(user_id="aflors",       email="allison.flors@snowflake.com",       display_name="Allison Flors",      role=UserRole.ACE),
-    "awickman":     CurrentUser(user_id="awickman",     email="andy.wickman@snowflake.com",        display_name="Andy Wickman",       role=UserRole.ACE),
-    "cfriend":      CurrentUser(user_id="cfriend",      email="cody.friend@snowflake.com",         display_name="Cody Friend",        role=UserRole.ACE),
-    "dhkim":        CurrentUser(user_id="dhkim",        email="david.h.kim@snowflake.com",         display_name="David H. Kim",       role=UserRole.ACE),
-    "edelatorre":   CurrentUser(user_id="edelatorre",   email="emma.delatorre@snowflake.com",      display_name="Emma Delatorre",     role=UserRole.ACE),
-    "jkirshenbaum": CurrentUser(user_id="jkirshenbaum", email="joe.kirshenbaum@snowflake.com",     display_name="Joe Kirshenbaum",    role=UserRole.ACE),
-    "jfarinacci":   CurrentUser(user_id="jfarinacci",   email="jorge.farinacci@snowflake.com",     display_name="Jorge Farinacci",    role=UserRole.ACE),
-    "mkeeter":      CurrentUser(user_id="mkeeter",      email="max.keeter@snowflake.com",          display_name="Max Keeter",         role=UserRole.ACE),
-    "mvandersteen": CurrentUser(user_id="mvandersteen", email="micah.vandersteen@snowflake.com",   display_name="Micah Vandersteen",  role=UserRole.ACE),
-    "nessner":      CurrentUser(user_id="nessner",      email="nick.essner@snowflake.com",         display_name="Nick Essner",        role=UserRole.ACE),
-    "pcanciari":    CurrentUser(user_id="pcanciari",    email="paolo.canciari@snowflake.com",      display_name="Paolo Canciari",     role=UserRole.ACE),
-    "ppatel":       CurrentUser(user_id="ppatel",       email="paragi.patel@snowflake.com",        display_name="Paragi Patel",       role=UserRole.ACE),
-    "pmonteiro":    CurrentUser(user_id="pmonteiro",    email="paulo.monteiro@snowflake.com",      display_name="Paulo Monteiro",     role=UserRole.ACE),
-    "sbwilliams":   CurrentUser(user_id="sbwilliams",   email="steven.b.williams@snowflake.com",   display_name="Steven B. Williams", role=UserRole.ACE),
-}
+logger = logging.getLogger(__name__)
 
 
 def _fetch_user_from_table(username: str) -> Optional[CurrentUser]:
@@ -46,7 +27,8 @@ def _fetch_user_from_table(username: str) -> Optional[CurrentUser]:
             role=UserRole.ACEM if row["ROLE"] == "acem" else UserRole.ACE,
             is_admin=bool(row["IS_ADMIN"]),
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch user '%s' from BKMNG_USERS: %s", username, e)
         return None
 
 
@@ -68,8 +50,16 @@ def _fetch_all_users_from_table() -> list[CurrentUser]:
             )
             for r in rows
         ]
-    except Exception:
+    except Exception as e:
+        logger.warning("Failed to fetch all users from BKMNG_USERS: %s", e)
         return []
+
+
+def _maybe_promote_admin(user: CurrentUser, user_id: str) -> CurrentUser:
+    admin_ids = settings.admin_users_set
+    if admin_ids and user_id.upper() in admin_ids and not user.is_admin:
+        return user.model_copy(update={"is_admin": True})
+    return user
 
 
 async def get_current_user(
@@ -78,24 +68,20 @@ async def get_current_user(
 ) -> CurrentUser:
     if settings.spcs_mode:
         selected = x_mock_user or (sf_context_current_user or "").strip()
-        user = _fetch_user_from_table(selected)
-        if user:
-            return user
-        default = _fetch_user_from_table(settings.spcs_default_user_id)
-        if default:
-            return default
-        return CurrentUser(
-            user_id="anonymous",
-            email="anonymous@snowflake.com",
-            display_name="Demo User",
-            role=UserRole.ACE,
-            is_admin=False,
-        )
+        default_id = settings.spcs_default_user_id
+    else:
+        selected = x_mock_user or settings.local_default_user_id
+        default_id = settings.local_default_user_id
 
-    user_id = x_mock_user or "jusdavis"
-    user = MOCK_USERS.get(user_id) or MOCK_USERS["jusdavis"]
-    admin_ids = settings.admin_users_set
-    is_admin = user_id.upper() in admin_ids if admin_ids else False
-    if is_admin and not user.is_admin:
-        return user.model_copy(update={"is_admin": True})
-    return user
+    for candidate in (selected, default_id):
+        if not candidate:
+            continue
+        user = _fetch_user_from_table(candidate)
+        if user:
+            return _maybe_promote_admin(user, candidate)
+
+    logger.error(
+        "Auth failed: '%s' / default '%s' not in BKMNG_USERS",
+        selected, default_id,
+    )
+    raise HTTPException(status_code=503, detail="Auth unavailable: BKMNG_USERS not reachable")

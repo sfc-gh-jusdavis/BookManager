@@ -277,6 +277,7 @@ This is where Karpathy's principles kick in. Read your own diff:
 - **Principle 2:** Is anything overcomplicated? Could 100 lines be 50?
 - **Principle 3:** Does every changed line trace to the PR description?
 - **Principle 4:** Is each change verifiable (test? smoke check? manual check?)
+- **Privacy:** Did I introduce real names, emails, or account IDs? Move them to `BKMNG_USERS` or a synthetic placeholder. The `pii-check` CI job will reject the PR otherwise.
 
 If anything fails, fix it before merging. This is the cheapest moment to fix problems.
 

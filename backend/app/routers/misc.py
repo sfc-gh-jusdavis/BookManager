@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from app.auth.dependencies import get_current_user, MOCK_USERS
+from app.auth.dependencies import get_current_user, _fetch_all_users_from_table
 from app.models.gong import GongCall
 from app.models.account import AccountResource
 from app.models.user import CurrentUser, UserRole
@@ -43,4 +43,4 @@ async def list_account_resources(
 
 @router.get("/ace-display-names")
 async def get_ace_display_names() -> dict[str, str]:
-    return {u.user_id: u.display_name for u in MOCK_USERS.values()}
+    return {u.user_id: u.display_name for u in _fetch_all_users_from_table()}
