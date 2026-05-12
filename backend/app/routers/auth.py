@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from app.auth.dependencies import get_current_user, MOCK_USERS, _fetch_all_users_from_table
+from app.auth.dependencies import get_current_user, _fetch_all_users_from_table
 from app.config import settings
 from app.models.user import CurrentUser, UserRole
 
@@ -35,18 +35,7 @@ async def get_mode() -> AuthMode:
 
 @router.get("/mock-users", response_model=list[MockUserSummary])
 async def list_mock_users() -> list[MockUserSummary]:
-    if settings.spcs_mode:
-        users = _fetch_all_users_from_table()
-        return [
-            MockUserSummary(
-                user_id=u.user_id,
-                email=u.email,
-                display_name=u.display_name,
-                role=u.role,
-                team_id=u.team_id,
-            )
-            for u in users
-        ]
+    users = _fetch_all_users_from_table()
     return [
         MockUserSummary(
             user_id=u.user_id,
@@ -55,5 +44,5 @@ async def list_mock_users() -> list[MockUserSummary]:
             role=u.role,
             team_id=u.team_id,
         )
-        for u in MOCK_USERS.values()
+        for u in users
     ]
