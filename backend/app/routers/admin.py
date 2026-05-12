@@ -75,7 +75,6 @@ async def get_cost_overview(
 
     try:
         import snowflake.connector
-        import os
         conn = snowflake.connector.connect(
             account=settings.snowflake_account,
             user=settings.snowflake_user,
