@@ -451,7 +451,10 @@ BEGIN
         op.NEXT_OPP_CLOSE_DATE,
         op.TOTAL_OPP_AMOUNT,
         COALESCE(su.OPEN_TICKET_COUNT, 0),
-        COALESCE(su.OPEN_SEV1_COUNT, 0)
+        COALESCE(su.OPEN_SEV1_COUNT, 0),
+        s2.PRIMARY_ACE_EMAIL,
+        s2.COVERAGE_ACE_EMAIL,
+        s2.COVERAGE_UNTIL
     FROM health_scored hs
     LEFT JOIN adoption_signals_cte ads ON ads.ACCOUNT_ID = hs.ACCOUNT_ID
     LEFT JOIN adoption_profile_cte  ap  ON ap.ACCOUNT_ID  = hs.ACCOUNT_ID
@@ -464,7 +467,8 @@ BEGIN
     LEFT JOIN topics_cte            tp  ON tp.ACCOUNT_ID  = hs.ACCOUNT_ID
     LEFT JOIN competitors_cte       cm  ON cm.ACCOUNT_ID  = hs.ACCOUNT_ID
     LEFT JOIN opp_cte               op  ON op.ACCOUNT_ID  = hs.ACCOUNT_ID
-    LEFT JOIN support_cte           su  ON su.ACCOUNT_ID  = hs.ACCOUNT_ID;
+    LEFT JOIN support_cte           su  ON su.ACCOUNT_ID  = hs.ACCOUNT_ID
+    LEFT JOIN TEMP.JUSDAVIS.BKMNG_ACCOUNT_SETTINGS s2 ON s2.ACCOUNT_ID = hs.ACCOUNT_ID;
 
     -- 6. Refresh core signals for this account (DELETE + INSERT scoped). Calls full SP then
     --    restores other accounts' core signals is not feasible; instead we re-run all the
