@@ -64,6 +64,8 @@ Where do I look up...?
 | Branch protection blocked my push — what do I do? | Open a PR. plan-3 explains why this is the right thing |
 | I committed to the wrong branch — help! | plan-3 ("Special Cases") |
 | Conflict during rebase — what now? | plan-3 ("Staying Current with Main") |
+| How do I add a new dev user? | INSERT into `BKMNG_USERS` table; no code change |
+| Why no MOCK_USERS dict? | CONTRIBUTING.md ("Privacy Rules") |
 
 ## Updating This Folder
 

@@ -50,3 +50,27 @@ jobs:
         run: npm run build
         env:
           NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+
+  pii-check:
+    name: PII Scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scan for company-internal identifiers
+        run: |
+          set -e
+          PATTERN='@snowflake\.com|@sfc\.com'
+          # Single allowed line: functional SQL filter excluding internal users
+          # from customer-facing query results.
+          ALLOWED='backend/app/services/snowflake_service.py'
+          MATCHES=$(git grep -nE "$PATTERN" -- ':(exclude)*.lock' ':(exclude)_archive/**' ':(exclude).snowflake/**' || true)
+          UNEXPECTED=$(echo "$MATCHES" | grep -vE "^${ALLOWED}:" || true)
+          if [ -n "$UNEXPECTED" ]; then
+            echo "Unexpected internal identifiers in tracked source:"
+            echo "$UNEXPECTED"
+            echo ""
+            echo "See CONTRIBUTING.md 'Privacy Rules'. Move PII to BKMNG_USERS table"
+            echo "or use synthetic placeholders (alice@example.com)."
+            exit 1
+          fi
+          echo "PII scan clean"
