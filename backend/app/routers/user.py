@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from app.auth.dependencies import get_current_user
 from app.models.user import CurrentUser
 from app.services import get_data_service
+from app.cache import cache_get, cache_set
 
 router = APIRouter(prefix="/user", tags=["user"])
 
@@ -274,6 +275,15 @@ class UpdatePreferencesRequest(BaseModel):
     writing_examples: Optional[list[str]] = None
 
 
+@router.get("/upcoming-meetings")
+async def get_user_upcoming_meetings(
+    limit: int = 15,
+    user: CurrentUser = Depends(get_current_user),
+    data=Depends(get_data_service),
+) -> list[dict]:
+    return data.list_all_upcoming_meetings(user.email, limit=limit)
+
+
 @router.get("/preferences")
 async def get_preferences(
     user: CurrentUser = Depends(get_current_user),
@@ -352,6 +362,55 @@ async def update_preferences(
     )
 
     return {"status": "ok"}
+
+
+@router.get("/impact-metrics")
+async def get_impact_metrics(
+    user: CurrentUser = Depends(get_current_user),
+    data=Depends(get_data_service),
+) -> list[dict]:
+    if not hasattr(data, "_cursor"):
+        return []
+
+    cache_key = f"impact_metrics:{user.display_name}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return cached
+
+    cur = data._cursor()
+    cur.execute(
+        """
+        SELECT
+            salesforce_account_name                     AS account_name,
+            theater,
+            salesforce_account_segment                  AS segment,
+            salesforce_account_tier                     AS tier,
+            days_since_assigned,
+            ROUND(pre_account_engineer_annual_run_rate_trailing_90d, 0) AS pre_ace_run_rate,
+            ROUND(annual_run_rate_trailing_90d, 0)      AS current_run_rate,
+            ROUND(annual_run_rate_delta, 0)             AS run_rate_delta,
+            ROUND(annual_run_rate_growth_pct * 100, 1)  AS run_rate_growth_pct,
+            ROUND(incremental_revenue_since_account_engineer_assigned, 0) AS incremental_revenue,
+            total_use_cases_assigned,
+            in_pursuit_use_case_cnt,
+            in_implementation_use_case_cnt,
+            tech_win_use_case_cnt,
+            won_use_case_cnt,
+            total_meetings_with_account_engineer,
+            last_meeting_with_account_date,
+            ROUND(won_eacv, 0) AS won_eacv,
+            ROUND(tech_win_eacv, 0) AS tech_win_eacv,
+            total_meetings_l90d
+        FROM SALES.SE_REPORTING.ACCOUNT_ENGINEER_ACCOUNT_IMPACT_METRICS
+        WHERE salesforce_account_engineer_name = %s
+        ORDER BY incremental_revenue DESC NULLS LAST
+        """,
+        (user.display_name,),
+    )
+    rows = cur.fetchall()
+    result = [dict(r) for r in rows]
+    cache_set(cache_key, result, ttl=3600)
+    return result
 
 
 class AlertPreferenceItem(BaseModel):
