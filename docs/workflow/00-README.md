@@ -44,7 +44,7 @@ Update this table as plans are executed.
 
 | Plan | Status | PR | Date executed |
 |------|--------|-----|---------------|
-| Plan 1: Repo Infrastructure | Mostly done; protection deferred (see single-source-users plan Phase 9) | #1, #2, #3 | 2026-05-12 |
+| Plan 1: Repo Infrastructure | Done (repo public, classic branch protection on main with strict required checks) | #1, #2, #3 | 2026-05-12 |
 | Plan 2: Repo Cleanup (8 PRs) | Not started | — | — |
 | Plan 3: Daily Cadence | Not started | — | — |
 | Plan 4: AI-Dev Patterns Adoption | Not started | — | — |
