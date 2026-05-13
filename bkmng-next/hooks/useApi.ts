@@ -798,7 +798,8 @@ export function useMarkAlertRead() {
       );
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _alertId, context: AlertRollbackContext) => {
+    onError: (_err, _alertId, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
@@ -835,7 +836,8 @@ export function useMarkAllAlertsRead() {
       qc.setQueryData<{ count: number }>(["alert-count"], { count: 0 });
       return { previous, prevAccountQueries };
     },
-    onError: (_err, _v, context: AlertRollbackContext) => {
+    onError: (_err, _v, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevAccountQueries) {
         (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
@@ -878,7 +880,8 @@ export function useDismissAlert() {
       }
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _alertId, context: AlertRollbackContext) => {
+    onError: (_err, _alertId, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
@@ -925,7 +928,8 @@ export function useMuteAlert() {
       }
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _vars, context: AlertRollbackContext) => {
+    onError: (_err, _vars, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
