@@ -1,56 +1,104 @@
-Run two subagents reviewing the same PR with different model behaviors to catch each other's blind spots (Pattern 12).
+Cross-vendor PR review using two different model families. Currently a manual 2-window recipe; full automation is blocked on CCD adding per-subagent model selection (see "Limitations" below).
 
-**Caveat — model availability:** Cortex Code Desktop currently runs the Claude family. True cross-vendor review (Claude + GPT, Claude + Gemini) is NOT supported. We approximate by varying within the Claude family or by running two passes with different focal lengths. When/if multi-vendor support arrives, expand this command.
+## Why cross-model
 
-Steps:
+A single model family can have systematic blindspots — patterns it consistently overlooks because of training-data overlap. Running the same PR through two distinct model families (e.g., Anthropic Claude + OpenAI GPT) surfaces disagreement, which is the strongest signal that something deserves a closer look.
 
-1. Ask which PR (number or URL).
+This is AI-Dev Pattern 12 (Cross-Model Review).
 
-2. Spawn two subagents in parallel via `runSubagent` with `run_in_background: true`:
+## Limitations (be honest about this)
 
-   **Agent A — Deep / careful pass:**
-   ```
-   Perform a careful, multi-pass review of PR #<N> at
-   https://github.com/sfc-gh-jusdavis/BookManager/pull/<N>.
+CCD's `runSubagent` does NOT currently support per-subagent model selection. All subagents inherit the parent session's model. Therefore:
 
-   Focus: subtle bugs, edge cases, performance issues. Take your time.
-   Read the diff slowly. Trace data flow.
+- `/multi-review` runs 3 (or 6) parallel agents, but they all use the same model family. That's still useful (different prompts catch different things), but it is NOT cross-vendor.
+- True cross-model review today requires the user to manually switch the CCD session model between two windows.
 
-   Read docs/workflow/karpathy-coding-principles.md.
+When CCD adds per-subagent model selection, this command should be rewritten to spawn natively across vendors. Until then: manual 2-window recipe.
 
-   Use `gh pr diff <N>` and `gh pr view <N>`.
+## The Manual 2-Window Recipe
 
-   Reply with detailed findings: each issue with file:line, severity,
-   reasoning, suggested fix.
-   ```
+### Setup
 
-   **Agent B — Fast / broad pass:**
-   ```
-   Quickly scan PR #<N> at
-   https://github.com/sfc-gh-jusdavis/BookManager/pull/<N> for:
-   - Style violations
-   - Simple bugs (typos, off-by-one, null deref)
-   - Missing tests
-   - Obvious naming issues
+1. Open **CCD Window A**. Set session model to **Claude Opus** (or whichever Anthropic model is current).
+2. Open **CCD Window B**. Set session model to **GPT** (or whichever OpenAI model is current).
+3. Both windows must have repository context loaded.
 
-   Use `gh pr diff <N>`.
+### Run
 
-   Reply tersely: bullet list of concerns, no narrative.
-   ```
+In each window, paste:
 
-3. Use `wait_agent` to collect both.
+```
+Review PR #<N> at https://github.com/sfc-gh-jusdavis/BookManager/pull/<N>.
 
-4. Compare results:
-   - **Agreed issues** → high-confidence; surface to user
-   - **Disagreement** → notable signal; investigate the disagreement itself
+Apply Karpathy's 4 principles from docs/dev-ops/coding-principles.md:
+- P1 Think: silent assumptions in the diff?
+- P2 Simplicity: anything overcomplicated?
+- P3 Surgical: every changed line traces to PR description?
+- P4 Goal-Driven: changes verifiable?
 
-5. Post a consolidated review comment via:
-   ```bash
-   gh pr review <N> --comment -b "<comparison + recommendations>"
-   ```
+Also surface:
+- Security: authz gaps, SQL injection, secret exposure, PII
+- Performance: N+1 queries, missing indexes, unnecessary re-renders
+- Maintainability: naming, docstrings, coupling, error handling
 
-6. Summarize to user with explicit note about the model-availability limitation.
+Reply with a numbered list of findings (file:line + severity + concern + suggestion) or "no findings."
+```
 
-## Future enhancement
+### Compare
 
-When CCD or wider tooling supports multi-vendor models, replace one of the agents with a non-Claude model. The disagreement signal is dramatically stronger across model families than within one.
+1. Save Window A's findings to `/tmp/pr-<N>-windowA.md`.
+2. Save Window B's findings to `/tmp/pr-<N>-windowB.md`.
+3. Diff them mentally:
+   - **Both flag X** -> high confidence; address before merge.
+   - **Only one flags X** -> medium confidence; investigate.
+   - **They disagree on X** -> highest signal; this is exactly what cross-model is for. Probably an architectural or stylistic judgment call worth a human decision.
+
+### Optional consolidation
+
+```bash
+gh pr review <N> --comment -F /tmp/pr-<N>-cross-model-summary.md
+```
+
+Format:
+```
+## Cross-Model Review (Pattern 12, manual recipe)
+
+### Both models flagged
+<consensus findings>
+
+### Anthropic only
+<window A findings not in B>
+
+### OpenAI only
+<window B findings not in A>
+
+### Disagreement
+<things both flagged with different conclusions>
+
+### Recommendation
+<Address-before-merge / Acceptable-as-is / Needs-human-judgment-call>
+```
+
+## When to use
+
+- High-risk changes (auth, data integrity, schema migrations, anything in `BKMNG_USERS` path)
+- PRs where `/multi-review --full` finds zero issues but you have a nagging sense something is off
+- Architectural decisions where systematic blindspots are likely (e.g., concurrency, caching invariants, security boundaries)
+
+## When NOT to use
+
+- Trivial PRs (typo fixes, doc-only edits)
+- PRs you've already deeply reviewed yourself
+- When the marginal benefit isn't worth the manual 2-window cost
+
+## Future work (when CCD adds per-subagent model selection)
+
+This command should evolve to:
+
+1. Single invocation in the parent session
+2. Spawns Window A subagent with `model: anthropic/claude-opus`
+3. Spawns Window B subagent with `model: openai/gpt-5`
+4. Both run the same review prompt in parallel
+5. Parent consolidates findings automatically
+
+Track this via the SnowBoard if/when the underlying capability lands. Update [docs/dev-ops/ai-dev-patterns.md](../../docs/dev-ops/ai-dev-patterns.md) Section 2 row for Pattern 9.
