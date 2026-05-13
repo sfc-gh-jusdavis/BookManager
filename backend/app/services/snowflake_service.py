@@ -3825,6 +3825,24 @@ Respond with ONLY this JSON:
             row["USE_CASE_NAME"], row["STAGE"], ace_email,
         )
 
+    def get_account_id_for_use_case(self, use_case_id: str) -> Optional[str]:
+        """
+        Resolve the parent account for a use case. Returns None if the use case
+        does not exist. Used by routers to enforce that posted use_case_id
+        values are valid before mutating cached updates.
+
+        NOTE: Authorization is currently flat (all 19 internal users see all
+        data). This helper is the chokepoint for adding team-visibility
+        filtering when external users are introduced.
+        """
+        cur = self._cursor()
+        cur.execute(
+            "SELECT ACCOUNT_ID FROM TEMP.JUSDAVIS.BKMNG_USE_CASES WHERE USE_CASE_ID = %s",
+            (use_case_id,),
+        )
+        row = cur.fetchone()
+        return row["ACCOUNT_ID"] if row else None
+
     def update_use_case_update_text(
         self, use_case_id: str, new_text: str, ace_email: str
     ) -> dict:
