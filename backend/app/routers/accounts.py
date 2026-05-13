@@ -547,6 +547,13 @@ async def regenerate_use_case_update(
     user: CurrentUser = Depends(get_current_user),
     data: SnowflakeDataService = Depends(get_data_service),
 ) -> dict:
+    # Authz scoping: validate the use_case_id refers to a real use case before
+    # mutating cached updates. Permission model is currently flat (all 19
+    # internal users see all data); when external users are introduced, the
+    # service helper get_account_id_for_use_case is the chokepoint to add
+    # team-visibility filtering.
+    if data.get_account_id_for_use_case(use_case_id) is None:
+        raise HTTPException(status_code=404, detail="Use case not found")
     return data.regenerate_one_use_case_update(use_case_id, user.email)
 
 
@@ -557,6 +564,9 @@ async def save_use_case_update(
     user: CurrentUser = Depends(get_current_user),
     data: SnowflakeDataService = Depends(get_data_service),
 ) -> dict:
+    # Same authz scoping as the regenerate endpoint above.
+    if data.get_account_id_for_use_case(use_case_id) is None:
+        raise HTTPException(status_code=404, detail="Use case not found")
     return data.update_use_case_update_text(use_case_id, body.text, user.email)
 
 
