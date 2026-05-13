@@ -14,12 +14,31 @@ Steps:
    git stash push -u -m "wip-pre-<branch-name>"
    ```
 
-4. Create and switch to the new branch:
+4. Ask: **"Use a worktree (recommended for parallel execution) or same-tree branch?"**
+
+   If invoked from a SnowBoard execution context (parallel agents), choose **worktree** without prompting.
+
+   **Worktree mode** — isolates this branch in a sibling directory; safe for parallel agents:
+   ```bash
+   git worktree add ../BookManager-<short-name> -b <prefix>/<short-name>
+   cd ../BookManager-<short-name>
+   # Symlink backend/.env (per-developer config, not per-branch)
+   if [ -f ~/projects/BookManager/backend/.env ] && [ ! -e backend/.env ]; then
+     ln -s ~/projects/BookManager/backend/.env backend/.env
+   fi
+   ```
+   Then remind:
+   - "You're now in `../BookManager-<short-name>`. Subsequent commands run from here."
+   - "Run `npm install` in `bkmng-next/` before any `make up-detach`."
+   - "Only one worktree at a time can run Docker (port 8000/3001 conflict)."
+   - "Use `/finish-feature` after PR merge to clean up the worktree."
+
+   **Same-tree mode** — simpler; for solo sequential work:
    ```bash
    git checkout -b <prefix>/<short-name>
    ```
 
-5. Remind the user of the conventions in [WORKFLOW.md](../../WORKFLOW.md):
+5. Remind the user of the conventions in [docs/dev-ops/workflow.md](../../docs/dev-ops/workflow.md):
    - Commit often, commit small (one focused change per commit)
    - Imperative-mood subjects, body explains why
    - `git add` with explicit paths only — never `git add .` or `git add -A`
@@ -27,4 +46,4 @@ Steps:
    - Run self-review against the 4 Karpathy principles before requesting merge
    - CI must pass (Backend, Frontend, PII Scan) — branch protection enforces this
 
-6. Suggest reading [WORKFLOW.md](../../WORKFLOW.md) for the full daily cadence if any process question comes up.
+6. Suggest reading [docs/dev-ops/](../../docs/dev-ops/) for the full agent context if any process question comes up.
