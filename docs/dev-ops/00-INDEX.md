@@ -35,7 +35,7 @@ For an agent picking up a ticket:
 
 - Backend (Python ruff)
 - Frontend (Next.js lint + tsc + build)
-- PII Scan (no `@snowflake.com` outside allowlist)
+- PII Scan (no internal company email domains outside allowlist)
 
 ## Branch protection
 

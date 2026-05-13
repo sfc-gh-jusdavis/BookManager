@@ -65,7 +65,7 @@ See [coding-principles.md](coding-principles.md) for the full Karpathy treatment
 
 - **Backend (Python ruff)** — lint clean
 - **Frontend (Next.js)** — `npm run lint` + `npx tsc --noEmit` + `npm run build`
-- **PII Scan** — no `@snowflake.com` or `@sfc.com` outside snowflake_service.py allowlist
+- **PII Scan** — no internal company email domains outside snowflake_service.py allowlist
 
 ## Branch Protection
 
