@@ -23,6 +23,7 @@ This repo follows the conventions in [WORKFLOW.md](./WORKFLOW.md). Highlights:
   ([docs/dev-ops/coding-principles.md](docs/dev-ops/coding-principles.md)).
 - **Parallel execution uses worktrees.** When running a SnowBoard ticket alongside other agents, `/start-feature` in worktree mode (`../BookManager-<short-name>/`). Cleanup with `/finish-feature` after PR merge.
 - **Agent context** is curated in [docs/dev-ops/](docs/dev-ops/) — single folder URL attached to every SnowBoard ticket as the one-line context source.
+- **Creating SnowBoard tickets** (manual or as part of breaking down a plan): use the `/create-task` slash command. Titles MUST use a priority prefix — `[High]`, `[Medium]`, or `[Low]` — and descriptions MUST include the standard References footer. See [.cortex/commands/create-task.md](.cortex/commands/create-task.md) for the exact format. This applies to both interactive ticket creation and agent-driven plan-to-tickets decomposition.
 
 When in doubt, read [WORKFLOW.md](./WORKFLOW.md).
 
