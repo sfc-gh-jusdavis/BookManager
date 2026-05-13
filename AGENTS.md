@@ -20,7 +20,9 @@ This repo follows the conventions in [WORKFLOW.md](./WORKFLOW.md). Highlights:
 - **Commit messages:** imperative mood, present tense.
 - **`git add`** with explicit paths only. Never `git add .` or `git add -A`.
 - **Self-review** before merging. Read your own diff against Karpathy's 4 principles
-  ([docs/workflow/karpathy-coding-principles.md](docs/workflow/karpathy-coding-principles.md)).
+  ([docs/dev-ops/coding-principles.md](docs/dev-ops/coding-principles.md)).
+- **Parallel execution uses worktrees.** When running a SnowBoard ticket alongside other agents, `/start-feature` in worktree mode (`../BookManager-<short-name>/`). Cleanup with `/finish-feature` after PR merge.
+- **Agent context** is curated in [docs/dev-ops/](docs/dev-ops/) — single folder URL attached to every SnowBoard ticket as the one-line context source.
 
 When in doubt, read [WORKFLOW.md](./WORKFLOW.md).
 
