@@ -2,6 +2,18 @@ Create a SnowBoard ticket for tech debt, follow-up work, or new feature requests
 
 ## Steps
 
+0. **Pre-flight: verify local main is current** (so file paths and line numbers in the ticket reference the latest code):
+   ```bash
+   git fetch origin
+   LOCAL=$(git rev-parse main 2>/dev/null || echo missing)
+   REMOTE=$(git rev-parse origin/main)
+   if [ "$LOCAL" != "$REMOTE" ]; then
+     echo "Local main is behind origin/main — pulling..."
+     git checkout main && git pull
+   fi
+   ```
+   No-op if already current.
+
 1. Gather inputs from the user (or from context if obvious):
    - **Title** (short, action-oriented)
    - **Priority**: `high`, `medium`, or `low`
