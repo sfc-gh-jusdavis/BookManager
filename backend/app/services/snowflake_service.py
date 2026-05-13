@@ -343,7 +343,6 @@ class SnowflakeDataService:
                    MEETING_END, DURATION_MINS, RECORDING_URL, PARTICIPANTS, SOURCE
             FROM BKMNG_UNIFIED_MEETINGS
             WHERE ACCOUNT_ID = %s AND IS_UPCOMING = TRUE
-              AND CONTAINS(UPPER(TITLE), UPPER(ACCOUNT_NAME))
             ORDER BY MEETING_START ASC
             LIMIT {int(limit)}
             """,
