@@ -10,6 +10,26 @@ Tech-lead morning ritual. Run this first thing every working session before any 
    git fetch origin --prune
    ```
 
+   **If `git pull` rejects with "fatal: refusing to merge unrelated histories" or shows divergent history**, the remote was force-pushed (e.g., a history rewrite for PII scrub). The local clone is contaminated with old history and must be re-cloned:
+
+   ```bash
+   # Detection: any local commits not reachable from origin/main means force-push happened
+   UNREACHABLE=$(git log --oneline ^origin/main main 2>/dev/null | head -1)
+   if [ -n "$UNREACHABLE" ]; then
+     echo "WARNING: local main has commits not on origin/main."
+     echo "Likely cause: origin was force-pushed (history rewrite)."
+     echo ""
+     echo "Recommended action: re-clone."
+     echo "  cd ~/projects && rm -rf BookManager && git clone https://github.com/sfc-gh-jusdavis/BookManager.git"
+     echo "  cd BookManager && cp ~/.snowflake/connections.toml /tmp/conn.bak  # preserve env if needed"
+     echo ""
+     echo "Or hard-reset to abandon local commits (destructive, only if you have nothing in flight):"
+     echo "  git fetch origin && git reset --hard origin/main"
+   fi
+   ```
+
+   Re-cloning preserves nothing in `backend/.env`, `bkmng-next/node_modules`, or any local stash. Restore those after re-clone (per-developer config, not source-controlled).
+
 2. **Worktree hygiene** — list any worktrees still around from yesterday's parallel runs:
    ```bash
    git worktree list
