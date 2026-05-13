@@ -5,8 +5,9 @@
 ## The Loop
 
 ```bash
-# Morning
-git checkout main && git pull
+# Morning (tech lead)
+/start-day                        # syncs main, triages PRs, surfaces stale worktrees, primes board review
+                                  # fallback if slash unavailable: git checkout main && git pull
 
 # Start a task
 /start-feature                    # picks worktree mode for parallel execution

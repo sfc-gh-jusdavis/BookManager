@@ -2,10 +2,17 @@ Scaffold a new feature branch following BookManager conventions.
 
 Steps:
 
-1. Confirm we're on main and synced:
+1. Confirm we're on main and synced (pre-flight stale-main guard):
    ```bash
-   git checkout main && git pull
+   git fetch origin
+   LOCAL=$(git rev-parse main 2>/dev/null || echo missing)
+   REMOTE=$(git rev-parse origin/main)
+   if [ "$LOCAL" != "$REMOTE" ]; then
+     echo "Local main is behind origin/main — pulling..."
+     git checkout main && git pull
+   fi
    ```
+   Always safe; no-op if already current. Catches the case where `/start-day` was skipped.
 
 2. Ask the user for the branch prefix (`feat`, `fix`, `chore`, `refactor`, `docs`, or `revert`) and a short kebab-case name.
 
