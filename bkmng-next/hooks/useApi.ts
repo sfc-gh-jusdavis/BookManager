@@ -728,6 +728,19 @@ export function useAccountTimeline(accountId: string) {
   });
 }
 
+/**
+ * Rollback context shape returned by alert-mutation onMutate handlers and
+ * consumed by their onError handlers to restore optimistic-update snapshots.
+ * Fields are all optional because not every mutation captures every snapshot.
+ */
+type AlertRollbackContext =
+  | {
+      previous?: AlertItem[];
+      prevCount?: { count: number };
+      prevAccountQueries?: [readonly unknown[], AlertItem[]][];
+    }
+  | undefined;
+
 export type AlertItem = {
   alert_id: string;
   user_email: string;
@@ -785,7 +798,8 @@ export function useMarkAlertRead() {
       );
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _alertId, context: any) => {
+    onError: (_err, _alertId, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
@@ -822,7 +836,8 @@ export function useMarkAllAlertsRead() {
       qc.setQueryData<{ count: number }>(["alert-count"], { count: 0 });
       return { previous, prevAccountQueries };
     },
-    onError: (_err, _v, context: any) => {
+    onError: (_err, _v, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevAccountQueries) {
         (context.prevAccountQueries as [readonly unknown[], AlertItem[]][]).forEach(([key, data]) => {
@@ -865,7 +880,8 @@ export function useDismissAlert() {
       }
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _alertId, context: any) => {
+    onError: (_err, _alertId, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
@@ -912,7 +928,8 @@ export function useMuteAlert() {
       }
       return { previous, prevCount, prevAccountQueries };
     },
-    onError: (_err, _vars, context: any) => {
+    onError: (_err, _vars, onMutateResult) => {
+      const context = onMutateResult as AlertRollbackContext;
       if (context?.previous) qc.setQueryData(["alerts"], context.previous);
       if (context?.prevCount) qc.setQueryData(["alert-count"], context.prevCount);
       if (context?.prevAccountQueries) {
