@@ -27,6 +27,31 @@ jobs:
       - name: Lint with ruff
         run: ruff check .
 
+  backend-tests:
+    name: Backend Tests (pytest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+          cache: 'pip'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+      - name: Run pytest (skip Snowflake-marked tests)
+        run: pytest -v -m "not snowflake" --tb=short
+        env:
+          SNOWFLAKE_CONNECTION_NAME: TEST_CONN
+          SNOWFLAKE_DATABASE: TEST_DB
+          SNOWFLAKE_SCHEMA: TEST_SCHEMA
+          LOCAL_DEFAULT_USER_ID: test-user-001
+
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
