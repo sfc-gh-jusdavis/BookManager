@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from app.services.snowflake_service import SnowflakeDataService
 
 _service: SnowflakeDataService | None = None
