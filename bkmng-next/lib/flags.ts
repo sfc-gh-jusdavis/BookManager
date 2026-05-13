@@ -21,67 +21,11 @@ export type FlagDef = {
 
 export const FEATURE_FLAGS = {
   // ===== Experimental (off for all by default) =====
-  ace_chat_v2: {
-    description: "ACE chat panel with NBA context (RavenChat)",
-    category: "experimental",
-    default_enabled: false,
-    enable_for_users: ["jusdavis"],
-  },
-  meeting_prep_v2: {
-    description: "New meeting prep view layout and AI suggestions",
-    category: "experimental",
-    default_enabled: false,
-    enable_for_users: ["jusdavis"],
-  },
-  composite_patterns: {
-    description: "Composite signal pattern alerts",
-    category: "experimental",
-    default_enabled: false,
-    enable_for_users: ["jusdavis"],
-  },
-  nba_panel: {
-    description: "Next Best Action recommendations panel",
-    category: "experimental",
-    default_enabled: false,
-    enable_for_users: ["jusdavis"],
-  },
-
+  // In-flight WIP placeholder; remove if abandoned for >1 quarter.
   ace_impact_metrics: {
     description: "ACE account impact metrics panel on settings page",
     category: "experimental",
     default_enabled: false,
-    enable_for_users: ["jusdavis"],
-  },
-
-  // ===== Beta (on for all, override-able) =====
-  security_posture_checklist: {
-    description: "Security posture checklist tile on account page",
-    category: "beta",
-    default_enabled: true,
-    enable_for_users: ["jusdavis"],
-  },
-  ai_assessments_panel: {
-    description: "AI-powered account assessments tile",
-    category: "beta",
-    default_enabled: true,
-    enable_for_users: ["jusdavis"],
-  },
-  timeline_v2: {
-    description: "Redesigned notes timeline with stats column",
-    category: "beta",
-    default_enabled: true,
-    enable_for_users: ["jusdavis"],
-  },
-  forecasts_advanced: {
-    description: "Advanced FY-quarter forecast tiles",
-    category: "beta",
-    default_enabled: true,
-    enable_for_users: ["jusdavis"],
-  },
-  use_case_breakdowns: {
-    description: "AI-parsed use case breakdowns panel",
-    category: "beta",
-    default_enabled: true,
     enable_for_users: ["jusdavis"],
   },
 
@@ -93,7 +37,7 @@ export const FEATURE_FLAGS = {
     enable_for_users: ["jusdavis"],
   },
 
-  // ===== Core (retroactive coverage — pages + major panels) =====
+  // ===== Core - page-level route gates (each verified to have an active call site) =====
   page_dashboard: { description: "Home dashboard route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_accounts_list: { description: "Accounts list route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_account_detail: { description: "Account detail route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
@@ -106,19 +50,13 @@ export const FEATURE_FLAGS = {
   page_alerts: { description: "Alerts inbox route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_settings: { description: "Settings route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
 
-  panel_meeting_prep: { description: "MeetingPrepView component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_notes_timeline: { description: "NotesTimeline component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_ai_chat: { description: "AIChatPanel component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_use_case_updates: { description: "UseCaseUpdatesPanel component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_health_alerts: { description: "AlertsTile (health)", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_health_engagement: { description: "EngagementTile (health)", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_health_adoption: { description: "AdoptionTile (health)", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_health_security: { description: "SecurityTile (health)", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_ace_chat: { description: "ACEChat component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_raven_chat: { description: "RavenChat component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_acem_dashboard: { description: "ACEMDashboard component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_ace_dashboard: { description: "ACEDashboard component", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  panel_breakdown_section: { description: "BreakdownSection (Gantt)", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
+  // ===== Beta =====
+  security_posture_checklist: {
+    description: "Security posture checklist tile on account page",
+    category: "beta",
+    default_enabled: true,
+    enable_for_users: ["jusdavis"],
+  },
 } as const satisfies Record<string, FlagDef>;
 
 export type FlagKey = keyof typeof FEATURE_FLAGS;
