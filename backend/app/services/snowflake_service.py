@@ -114,12 +114,15 @@ class SnowflakeDataService:
                 a.AE_NAME,
                 s.ENGAGEMENT_START_DATE,
                 s.ROLLOFF_DATE,
+                s.PRIMARY_ACE_EMAIL,
+                s.COVERAGE_ACE_EMAIL,
+                s.COVERAGE_UNTIL,
                 COUNT(uc.USE_CASE_ID) AS USE_CASE_COUNT
             FROM BKMNG_ONT_ACCOUNTS a
             LEFT JOIN BKMNG_USE_CASES uc ON uc.ACCOUNT_ID = a.ACCOUNT_ID
             LEFT JOIN BKMNG_ACCOUNT_SETTINGS s ON s.ACCOUNT_ID = a.ACCOUNT_ID
             {where}
-            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29
+            GROUP BY 1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32
             ORDER BY a.ACCOUNT_NAME
         """
         if ace_filter:
