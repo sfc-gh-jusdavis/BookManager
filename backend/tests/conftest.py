@@ -80,9 +80,9 @@ def test_client(mock_snowflake_service: MagicMock):
     """
     from fastapi.testclient import TestClient
     from app.main import app
-    from app.dependencies import get_snowflake_service  # type: ignore
+    from app.services import get_data_service
 
-    app.dependency_overrides[get_snowflake_service] = lambda: mock_snowflake_service
+    app.dependency_overrides[get_data_service] = lambda: mock_snowflake_service
     client = TestClient(app)
     yield client
     app.dependency_overrides.clear()
