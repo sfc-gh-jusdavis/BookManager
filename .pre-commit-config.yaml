@@ -7,3 +7,17 @@ repos:
         language: system
         files: '\.(tsx?|py)$'
         pass_filenames: false
+
+      - id: ruff-check
+        name: Ruff lint (Python)
+        entry: bash -c 'cd backend && python3 -m ruff check .'
+        language: system
+        files: '^backend/.*\.py$'
+        pass_filenames: false
+
+      - id: pii-scan
+        name: PII scan (no internal company email domains outside allowlist)
+        entry: bash scripts/pii_scan.sh
+        language: system
+        pass_filenames: false
+        always_run: true
