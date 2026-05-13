@@ -33,8 +33,8 @@ async def get_mode() -> AuthMode:
     return AuthMode(spcs_mode=settings.spcs_mode, mock_data=settings.mock_data)
 
 
-@router.get("/mock-users", response_model=list[MockUserSummary])
-async def list_mock_users() -> list[MockUserSummary]:
+def _list_users_summary() -> list[MockUserSummary]:
+    """Shared projection used by both /auth/users and /auth/mock-users."""
     users = _fetch_all_users_from_table()
     return [
         MockUserSummary(
@@ -46,6 +46,17 @@ async def list_mock_users() -> list[MockUserSummary]:
         )
         for u in users
     ]
+
+
+@router.get("/mock-users", response_model=list[MockUserSummary])
+async def list_mock_users() -> list[MockUserSummary]:
+    """Backward-compatible alias for /auth/users. Does NOT require auth.
+
+    Existing frontend callers reference this endpoint; keep until they migrate
+    to /auth/users (which is auth-required and the canonical source going
+    forward).
+    """
+    return _list_users_summary()
 
 
 @router.get("/users", response_model=list[MockUserSummary])
@@ -54,14 +65,4 @@ async def list_all_users(
 ) -> list[MockUserSummary]:
     """All known users (ACE + ACEM) for use in pickers (e.g. coverage ACE).
     Always reads from BKMNG_USERS so coverage can target any user."""
-    users = _fetch_all_users_from_table()
-    return [
-        MockUserSummary(
-            user_id=u.user_id,
-            email=u.email,
-            display_name=u.display_name,
-            role=u.role,
-            team_id=u.team_id,
-        )
-        for u in users
-    ]
+    return _list_users_summary()
