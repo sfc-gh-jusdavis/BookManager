@@ -396,7 +396,16 @@ cd ~/projects/BookManager
 git worktree remove ../BookManager-feat-X
 ```
 
-Branch remains; only the working folder is removed.
+Branch remains; only the working folder is removed. Use `/finish-feature` to automate this after PR merge.
+
+### Caveats for parallel agents
+
+- **Docker ports collide.** Only one worktree at a time can run `make up-detach` (8000/3001 hardcoded in `docker-compose.yml`). SnowBoard agents typically don't run Docker — they trust CI for build verification.
+- **`backend/.env` is per-developer, not per-branch.** `/start-feature` in worktree mode auto-symlinks `backend/.env` from the main worktree.
+- **`node_modules` is per-worktree.** Run `npm install` in `bkmng-next/` after creating a new worktree, before `npm run build`.
+- **`.git/hooks/` is shared.** Pre-commit hooks installed in the main worktree fire in all worktrees automatically (verified via `git rev-parse --git-common-dir`).
+- **Cleanup matters.** Use `/finish-feature` after PR merge to `git worktree remove`. Stale worktrees clutter the parent directory.
+- **Branch protection's strict mode** still applies: if 5 worktrees finish at once, only the first merges; others must rebase + re-run CI.
 
 ---
 
