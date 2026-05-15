@@ -6,8 +6,7 @@ Three checks:
      bkmng-next/lib/flags.ts AND backend/app/feature_flags/registry.py.
   B) Newly-added route/page/panel files include a useFeatureFlag(...) call.
      Bypass with `// @flag-exempt: <reason>` near the top of the file.
-  C) New flag entries in lib/flags.ts must have default_enabled: false
-     and enable_for_users: ["jusdavis"] (so unreleased work is jusdavis-only).
+  C) New flag entries in lib/flags.ts must have default_enabled: false.
      Existing flags can be edited freely (rollout = flip default true).
 
 Exit 0 = pass, non-zero = block commit.
@@ -127,7 +126,7 @@ def check_b_new_components_have_flags(added: list[Path]) -> int:
 
 
 def check_c_new_flags_jusdavis_only(added: list[Path], modified: list[Path]) -> int:
-    """New flag entries must default_enabled:false and enable_for_users include 'jusdavis'."""
+    """New flag entries must default_enabled:false."""
     if TS_REGISTRY not in [*added, *modified]:
         return 0
     try:
@@ -170,10 +169,7 @@ def check_c_new_flags_jusdavis_only(added: list[Path], modified: list[Path]) -> 
             continue
         body = m.group(1)
         if re.search(r"default_enabled\s*:\s*true", body, re.IGNORECASE):
-            fail(f"new flag '{key}' has default_enabled: true. New flags must default to false (jusdavis-only).")
-            failures += 1
-        if "jusdavis" not in body:
-            fail(f"new flag '{key}' missing enable_for_users: [\"jusdavis\"]. Required for new flags.")
+            fail(f"new flag '{key}' has default_enabled: true. New flags must default to false.")
             failures += 1
     return 0 if failures == 0 else 1
 

@@ -51,12 +51,14 @@ export function Sidebar() {
   const pathname = usePathname();
   const { currentUser, isSpcs, switchUser, mockUsers } = useAuth();
   const adminCostsEnabled = useFeatureFlag("admin_costs_page");
+  const pageAceEnabled = useFeatureFlag("page_ace");
   const { data: alertCountData } = useAlertCount();
   const unreadCount = alertCountData?.count ?? 0;
 
   const visibleItems = NAV_ITEMS.filter((item) => {
     if (item.adminOnly && !currentUser?.is_admin) return false;
     if (item.href === "/admin/costs" && !adminCostsEnabled) return false;
+    if (item.href === "/ace" && !pageAceEnabled) return false;
     return true;
   });
 

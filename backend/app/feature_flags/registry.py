@@ -26,6 +26,8 @@ JUSDAVIS = ["jusdavis"]
 FEATURE_FLAGS: Dict[str, FlagDef] = {
     # Experimental (off by default) - in-flight WIP placeholders
     "ace_impact_metrics": {"description": "ACE account impact metrics panel on settings page", "category": "experimental", "default_enabled": False, "enable_for_users": JUSDAVIS},
+    "ace_chat_floating": {"description": "Floating Ask ACE chat widget on all pages", "category": "experimental", "default_enabled": False},
+    "ace_chat_panel": {"description": "ACE assistant tab on account detail page", "category": "experimental", "default_enabled": False},
 
     # Admin
     "admin_costs_page": {"description": "Admin cost dashboard at /admin/costs", "category": "admin", "default_enabled": True, "enable_for_users": JUSDAVIS},
@@ -35,10 +37,10 @@ FEATURE_FLAGS: Dict[str, FlagDef] = {
     "page_accounts_list": {"description": "Accounts list route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_account_detail": {"description": "Account detail route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_forecasts": {"description": "Forecasts route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
-    "page_tmrs": {"description": "TMRs route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
+    "page_tmrs": {"description": "TMRs route", "category": "core", "default_enabled": False},
     "page_team": {"description": "Team route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_team_detail": {"description": "Team detail route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
-    "page_ace": {"description": "Ask ACE route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
+    "page_ace": {"description": "Ask ACE route", "category": "core", "default_enabled": False},
     "page_timeline": {"description": "Global timeline route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_alerts": {"description": "Alerts inbox route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_settings": {"description": "Settings route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
