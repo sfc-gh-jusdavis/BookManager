@@ -52,6 +52,10 @@ export function Sidebar() {
   const { currentUser, isSpcs, switchUser, mockUsers } = useAuth();
   const adminCostsEnabled = useFeatureFlag("admin_costs_page");
   const pageAceEnabled = useFeatureFlag("page_ace");
+  const pageTmrsEnabled = useFeatureFlag("page_tmrs");
+  const pageForecastsEnabled = useFeatureFlag("page_forecasts");
+  const pageTimelineEnabled = useFeatureFlag("page_timeline");
+  const pageTeamEnabled = useFeatureFlag("page_team");
   const { data: alertCountData } = useAlertCount();
   const unreadCount = alertCountData?.count ?? 0;
 
@@ -59,6 +63,10 @@ export function Sidebar() {
     if (item.adminOnly && !currentUser?.is_admin) return false;
     if (item.href === "/admin/costs" && !adminCostsEnabled) return false;
     if (item.href === "/ace" && !pageAceEnabled) return false;
+    if (item.href === "/tmrs" && !pageTmrsEnabled) return false;
+    if (item.href === "/forecasts" && !pageForecastsEnabled) return false;
+    if (item.href === "/timeline" && !pageTimelineEnabled) return false;
+    if (item.href === "/team" && !pageTeamEnabled) return false;
     return true;
   });
 
