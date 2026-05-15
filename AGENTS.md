@@ -21,12 +21,56 @@ This repo follows the conventions in [WORKFLOW.md](./WORKFLOW.md). Highlights:
 - **`git add`** with explicit paths only. Never `git add .` or `git add -A`.
 - **Self-review** before merging. Read your own diff against Karpathy's 4 principles
   ([docs/dev-ops/coding-principles.md](docs/dev-ops/coding-principles.md)).
-- **Parallel execution uses worktrees.** When running a SnowBoard ticket alongside other agents, `/start-feature` in worktree mode (`../BookManager-<short-name>/`). Cleanup with `/finish-feature` after PR merge.
+- **Parallel execution uses worktrees.** When running a SnowBoard ticket alongside other agents, use `$start-feature` in worktree mode (`../BookManager-<short-name>/`). Cleanup with `$finish-feature` after PR merge.
 - **Agent context** is curated in [docs/dev-ops/](docs/dev-ops/) — single folder URL attached to every SnowBoard ticket as the one-line context source.
-- **Start every working session with `/start-day`.** It syncs main, surfaces stale worktrees, lists PRs awaiting your review, summarizes overnight merges, and primes you for SnowBoard triage. The pre-flight guards in `/start-feature` and `/create-task` are the safety net, not a substitute.
-- **Creating SnowBoard tickets** (manual or as part of breaking down a plan): use the `/create-task` slash command. Titles MUST use a priority prefix — `[High]`, `[Medium]`, or `[Low]` — and descriptions MUST include the standard References footer. See [.cortex/commands/create-task.md](.cortex/commands/create-task.md) for the exact format. This applies to both interactive ticket creation and agent-driven plan-to-tickets decomposition.
 
 When in doubt, read [WORKFLOW.md](./WORKFLOW.md).
+
+## Skill-Driven Workflow (AUTO-INVOKE)
+
+Skills live at `~/.cortex/skills/` and contain project-specific processes. The agent MUST invoke the correct skill at each workflow phase — do NOT skip these even if the user doesn't explicitly mention them. Invoke with the `skill` tool using the skill name.
+
+### Session start
+
+**Always invoke `$start-day` first** when beginning a new working session. It syncs main, surfaces stale worktrees, lists PRs awaiting review, summarizes overnight merges, and primes SnowBoard triage.
+
+### Planning phase
+
+When the user describes work to be done (features, fixes, investigations):
+
+1. Switch to plan mode and develop a concrete implementation plan.
+2. If the plan results in **one focused change**: proceed to the Execution phase below.
+3. If the plan results in **multiple independent changes**: decompose into SnowBoard tickets by invoking `$create-task` for each. Every ticket MUST use the `[Priority]` prefix and include the References footer. Then execute tickets in dependency order.
+
+### Execution phase (per branch/PR)
+
+For each unit of work (single ticket or single planned change):
+
+1. **Invoke `$start-feature`** to scaffold the branch. Choose worktree mode if other agents are running in parallel.
+2. Implement the change following [docs/dev-ops/coding-principles.md](docs/dev-ops/coding-principles.md) (Karpathy P1-P4).
+3. Self-review against the 4 principles before pushing.
+4. Push, open PR, wait for CI (5 gates: Backend ruff, Backend pytest, Frontend lint+tsc+build+vitest, PII Scan).
+5. **For PRs >300 lines or auth/data-integrity changes**: invoke `$multi-review` before merging.
+6. Merge via squash. Then invoke `$finish-feature` to clean up the worktree/branch.
+
+### Ticket creation (anytime)
+
+Whenever creating a SnowBoard ticket — whether decomposing a plan, logging tech debt found during implementation, or recording a follow-up — **always invoke `$create-task`**. This ensures the `[Priority]` prefix and References footer are applied consistently.
+
+### Operational tasks
+
+| Trigger | Skill to invoke |
+|---|---|
+| Starting local dev / Docker | `$local-dev` |
+| Docker broken (lightningcss, stale volumes) | `$docker-reset` |
+| Deploying to SPCS | `$deploy-spcs` |
+| Checking pipeline health | `$pipeline-status` |
+| Agent did something wrong / new convention | `$log-learning` |
+| Cross-vendor review needed | `$cross-model-review` |
+
+### Skill reference
+
+All skills are installed at `~/.cortex/skills/`. Each has trigger words in its description for automatic activation, but the directives above take precedence — invoke proactively, don't wait for trigger-word matching.
 
 ## Architecture
 
