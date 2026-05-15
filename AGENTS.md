@@ -66,6 +66,7 @@ Whenever creating a SnowBoard ticket — whether decomposing a plan, logging tec
 | Deploying to SPCS | `$deploy-spcs` |
 | Checking pipeline health | `$pipeline-status` |
 | Agent did something wrong / new convention | `$log-learning` |
+| Managing feature flags (add/enable/disable/audit/remove) | `$flag-management` |
 | Cross-vendor review needed | `$cross-model-review` |
 
 ### Skill reference

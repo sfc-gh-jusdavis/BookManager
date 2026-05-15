@@ -30,6 +30,7 @@ For an agent picking up a ticket:
 - `/multi-review` — 3 parallel subagent reviewers on a PR diff
 - `/cross-model-review` — 2-window manual recipe for cross-vendor review
 - `/finish-feature` — clean up worktree after PR merge
+- `/flag-management` — add, enable, disable, audit, or remove feature flags
 
 ## CI gates (cannot merge red)
 

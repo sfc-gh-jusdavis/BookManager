@@ -2,12 +2,14 @@
 
 import { Sidebar } from "./Sidebar";
 import { useAuth } from "@/context/AuthContext";
+import { useFeatureFlag } from "@/context/FeatureFlagContext";
 import { ACEChatProvider, useACEChatConfig } from "@/context/ACEChatContext";
 import { ACEChat } from "@/components/dashboard/ACEChat";
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const { isLoading } = useAuth();
   const { config } = useACEChatConfig();
+  const aceFloatingEnabled = useFeatureFlag("ace_chat_floating");
 
   return (
     <div className="flex h-screen overflow-hidden bg-slate-50">
@@ -35,7 +37,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
           children
         )}
       </main>
-      <ACEChat nbaContext={config.nbaContext} accountId={config.accountId} />
+      {aceFloatingEnabled && <ACEChat nbaContext={config.nbaContext} accountId={config.accountId} />}
     </div>
   );
 }

@@ -587,10 +587,11 @@ function AccountDetailPage() {
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
   const accountId = params?.id ?? "";
+  const aceChatPanelEnabled = useFeatureFlag("ace_chat_panel");
 
   const rawTab = searchParams?.get("tab") as TabKey | null;
   const initialTab: TabKey = rawTab && VALID_TABS.includes(rawTab) ? rawTab
-    : searchParams?.get("nba") ? "assistant" : "overview";
+    : (searchParams?.get("nba") && aceChatPanelEnabled) ? "assistant" : "overview";
   const [tab, setTab] = useState<TabKey>(initialTab);
 
   const nbaContext: NBAContext | null = useMemo(() => {
@@ -730,7 +731,7 @@ function AccountDetailPage() {
     { key: "adoption", label: "Account Health" },
     { key: "timeline", label: "Timeline" },
     { key: "prep", label: "Meeting Prep" },
-    { key: "assistant", label: "ACE" },
+    ...(aceChatPanelEnabled ? [{ key: "assistant" as TabKey, label: "ACE" }] : []),
   ];
 
   return (
@@ -1414,7 +1415,7 @@ function AccountDetailPage() {
             />
           )}
 
-          {tab === "assistant" && (
+          {aceChatPanelEnabled && tab === "assistant" && (
             <div className="h-[calc(100vh-300px)] min-h-[400px]">
               <AIChatPanel
                 account={account}
