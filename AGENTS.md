@@ -1,6 +1,18 @@
 # BookManager — Agent Instructions
 
-Read this file before planning or executing any task on this project.
+## MANDATORY PRE-FLIGHT (execute before ANY other action)
+
+**STOP. Do NOT start coding, editing files, or running SQL until you complete these steps in order.**
+
+1. **Invoke `$start-day`** — syncs main, checks for stale worktrees, lists open PRs, primes board triage. Do this even if the user jumps straight to a task description.
+2. **Switch to plan mode** — develop a concrete plan before touching any file. Present the plan for user review.
+3. **If the plan produces multiple changes**: decompose into SnowBoard tickets by invoking `$create-task` for each.
+4. **For each unit of work**: invoke `$start-feature` to create a branch (worktree mode if parallel). Never edit files on main.
+5. **After implementation**: self-review against Karpathy P1-P4, push, open PR, wait for CI (5 gates), then merge. Invoke `$finish-feature` to clean up.
+
+**If you skip these steps and edit files directly on main, you are violating the project workflow. Stop, stash your changes, and start over from step 1.**
+
+---
 
 ## Privacy Rule (HIGH PRIORITY)
 
