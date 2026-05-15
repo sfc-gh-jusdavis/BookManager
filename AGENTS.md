@@ -33,7 +33,7 @@ This repo follows the conventions in [WORKFLOW.md](./WORKFLOW.md). Highlights:
 - **`git add`** with explicit paths only. Never `git add .` or `git add -A`.
 - **Self-review** before merging. Read your own diff against Karpathy's 4 principles
   ([docs/dev-ops/coding-principles.md](docs/dev-ops/coding-principles.md)).
-- **Parallel execution uses worktrees.** When running a SnowBoard ticket alongside other agents, use `$start-feature` in worktree mode (`../BookManager-<short-name>/`). Cleanup with `$finish-feature` after PR merge.
+- **Parallel execution MUST use worktrees.** When multiple CCD agents (or any unrelated branches) are active simultaneously, each MUST use `$start-feature` in worktree mode (`../BookManager-<short-name>/`). The main working directory (`~/projects/BookManager`) must stay on `main` or on a single agent's branch — never shared by multiple agents. Cleanup with `$finish-feature` after PR merge.
 - **Agent context** is curated in [docs/dev-ops/](docs/dev-ops/) — single folder URL attached to every SnowBoard ticket as the one-line context source.
 
 When in doubt, read [WORKFLOW.md](./WORKFLOW.md).
@@ -127,6 +127,7 @@ make deploy            # build + push + ALTER SERVICE (one command)
 - **Snowflake CONCAT_WS returns NULL if any arg is NULL** — use `ARRAY_TO_STRING(ARRAY_COMPACT(ARRAY_CONSTRUCT(...)))` instead.
 - **SPs that access `SALES.RAVEN` views must use `EXECUTE AS CALLER`**.
 - **All SPs use `$$` delimiter** (not `AS '...'`).
+- **DO NOT work on unrelated branches in the same tree.** If other CCD agents are active, use worktree mode via `$start-feature`. Sharing a single working directory across agents causes branch collisions, unexpected file changes, and merge conflicts.
 
 ## Docker Troubleshooting
 
