@@ -18,13 +18,28 @@ Resolution order: `COALESCE(user_override, role_override, default_enabled)`.
 
 Categories: `experimental` (off by default, dev-only), `beta` (on by default, limited scope), `core` (page-level gates), `admin` (admin-only features).
 
+## Scope Question (MANDATORY)
+
+Before ANY add, enable, or disable operation, ask the user:
+
+> **What scope should this flag change apply to?**
+> - **All users** — change `default_enabled` only, no user overrides
+> - **Specific users** — set `default_enabled` to the opposite, add overrides for named users
+> - **Just me (jusdavis)** — set `default_enabled` to the opposite, add override for jusdavis only
+
+The answer determines whether `enable_for_users` is set in the registry and whether overrides are seeded in Snowflake. Do NOT assume scope — always ask.
+
 ## Operations
 
 ### 1. Add a New Flag
 
+0. **Ask scope** (see Scope Question above).
 1. Choose a `snake_case` key and category.
-2. Add to **Python registry** (`registry.py`) under the correct category section. New flags MUST have `default_enabled: False` and `enable_for_users: JUSDAVIS`.
-3. Add **identical** entry to **TypeScript registry** (`flags.ts`) with `default_enabled: false` and `enable_for_users: ["jusdavis"]`.
+2. Add to **Python registry** (`registry.py`) under the correct category section:
+   - **All users**: `"default_enabled": False` (no `enable_for_users`).
+   - **Specific users**: `"default_enabled": False, "enable_for_users": ["user1", "user2"]`.
+   - **Just me**: `"default_enabled": False, "enable_for_users": JUSDAVIS`.
+3. Add **identical** entry to **TypeScript registry** (`flags.ts`).
 4. Add `useFeatureFlag("key")` in the component being gated:
    - **Page-level**: use `withFlagGate(PageComponent, "key")` (see existing pages for pattern).
    - **Inline section**: `const enabled = useFeatureFlag("key"); if (!enabled) return null;`
@@ -45,14 +60,18 @@ Categories: `experimental` (off by default, dev-only), `beta` (on by default, li
 
 ### 3. Disable a Flag (change default to false)
 
+0. **Ask scope** (see Scope Question above).
 1. Set `default_enabled` to `False`/`false` in **both** registries.
-2. Run `make sync-flags`.
-3. Verify: `SELECT FLAG_KEY, DEFAULT_ENABLED FROM TEMP.JUSDAVIS.BKMNG_FEATURE_FLAGS WHERE FLAG_KEY = '<key>';`
-4. Note: the `enable_for_users: ["jusdavis"]` override seeds `ENABLED=TRUE` in the overrides table. This means **jusdavis still sees the feature** even when the default is false. This is intentional (dev can always access). To fully hide from jusdavis too:
-   ```sql
-   DELETE FROM TEMP.JUSDAVIS.BKMNG_FEATURE_FLAG_OVERRIDES
-   WHERE FLAG_KEY = '<key>' AND TARGET_TYPE = 'user' AND TARGET_VALUE = 'jusdavis';
-   ```
+2. Based on scope:
+   - **All users**: remove `enable_for_users` from the registry entry entirely. After sync, also delete any existing overrides:
+     ```sql
+     DELETE FROM TEMP.JUSDAVIS.BKMNG_FEATURE_FLAG_OVERRIDES
+     WHERE FLAG_KEY = '<key>' AND TARGET_TYPE = 'user';
+     ```
+   - **Specific users still see it**: keep `enable_for_users: ["user1"]` in registry. Sync will seed their overrides.
+   - **Just me still sees it**: keep `enable_for_users: JUSDAVIS` / `["jusdavis"]`.
+3. Run `make sync-flags`.
+4. Verify: `SELECT FLAG_KEY, DEFAULT_ENABLED FROM TEMP.JUSDAVIS.BKMNG_FEATURE_FLAGS WHERE FLAG_KEY = '<key>';`
 
 ### 4. Audit Flags (status report)
 
@@ -85,7 +104,7 @@ Categories: `experimental` (off by default, dev-only), `beta` (on by default, li
 The pre-commit hook (`scripts/validate_flags.py`) enforces:
 - **Check A**: Every `useFeatureFlag('xxx')` key exists in BOTH registries. Fails on TS-Python divergence.
 - **Check B**: Newly-added page/component files must include a `useFeatureFlag()` call. Bypass with `// @flag-exempt: <reason>`.
-- **Check C**: New flags must have `default_enabled: false` and `enable_for_users: ["jusdavis"]`.
+- **Check C**: New flags must have `default_enabled: false`.
 
 CI gates (cannot merge red): Backend ruff, Frontend lint+tsc+build, PII Scan.
 
