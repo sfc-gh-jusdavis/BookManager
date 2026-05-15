@@ -29,6 +29,8 @@ FEATURE_FLAGS: Dict[str, FlagDef] = {
     "ace_chat_floating": {"description": "Floating Ask ACE chat widget on all pages", "category": "experimental", "default_enabled": False},
     "ace_chat_panel": {"description": "ACE assistant tab on account detail page", "category": "experimental", "default_enabled": False},
 
+    "dashboard_admin_tasks": {"description": "Admin tasks section on home dashboard", "category": "experimental", "default_enabled": False},
+
     # Admin
     "admin_costs_page": {"description": "Admin cost dashboard at /admin/costs", "category": "admin", "default_enabled": True, "enable_for_users": JUSDAVIS},
 

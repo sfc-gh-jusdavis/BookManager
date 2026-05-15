@@ -39,6 +39,12 @@ export const FEATURE_FLAGS = {
     default_enabled: false,
   },
 
+  dashboard_admin_tasks: {
+    description: "Admin tasks section on home dashboard",
+    category: "experimental",
+    default_enabled: false,
+  },
+
   // ===== Admin =====
   admin_costs_page: {
     description: "Admin cost dashboard at /admin/costs",
