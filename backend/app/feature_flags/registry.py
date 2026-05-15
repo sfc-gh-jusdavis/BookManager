@@ -37,7 +37,7 @@ FEATURE_FLAGS: Dict[str, FlagDef] = {
     "page_accounts_list": {"description": "Accounts list route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_account_detail": {"description": "Account detail route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_forecasts": {"description": "Forecasts route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
-    "page_tmrs": {"description": "TMRs route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
+    "page_tmrs": {"description": "TMRs route", "category": "core", "default_enabled": False},
     "page_team": {"description": "Team route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_team_detail": {"description": "Team detail route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
     "page_ace": {"description": "Ask ACE route", "category": "core", "default_enabled": False},
