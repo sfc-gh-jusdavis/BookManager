@@ -53,10 +53,10 @@ export const FEATURE_FLAGS = {
   page_account_detail: { description: "Account detail route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_forecasts: { description: "Forecasts route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_tmrs: { description: "TMRs route", category: "core", default_enabled: false },
-  page_team: { description: "Team route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
-  page_team_detail: { description: "Team detail route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
+  page_team: { description: "Team route", category: "core", default_enabled: false },
+  page_team_detail: { description: "Team detail route", category: "core", default_enabled: false },
   page_ace: { description: "Ask ACE route", category: "core", default_enabled: false },
-  page_timeline: { description: "Global timeline route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
+  page_timeline: { description: "Global timeline route", category: "core", default_enabled: false },
   page_alerts: { description: "Alerts inbox route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
   page_settings: { description: "Settings route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
 
