@@ -20,6 +20,7 @@ import {
   Check,
   MoreHorizontal,
   GripVertical,
+  ChevronRight,
 } from "lucide-react";
 import Link from "next/link";
 import { withFlagGate } from "@/components/ui/flag-gate";
@@ -46,6 +47,37 @@ const PRIORITY_DOT: Record<string, string> = {
   medium: "bg-amber-400",
   low: "bg-slate-300",
 };
+
+type AccountGroup = {
+  account_id: string | null;
+  account_name: string | null;
+  tasks: UserTask[];
+  highestPriority: "high" | "medium" | "low";
+};
+
+function AccountGroupHeader({ group, expanded, onToggle }: {
+  group: AccountGroup;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+    >
+      <ChevronRight className={`w-3 h-3 text-slate-400 transition-transform ${expanded ? "rotate-90" : ""}`} />
+      <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[group.highestPriority]}`} />
+      <Link
+        href={`/accounts/${group.account_id}`}
+        onClick={(e) => e.stopPropagation()}
+        className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate hover:text-sky-600"
+      >
+        {group.account_name}
+      </Link>
+      <span className="ml-auto text-[10px] text-slate-400 font-medium">{group.tasks.length}</span>
+    </button>
+  );
+}
 
 function TaskCard({
   task,
@@ -218,6 +250,16 @@ function TasksPage() {
   const updateTask = useUpdateTask();
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  const toggleGroup = useCallback((key: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }, []);
+
   const tasksByColumn = useMemo(() => {
     const grouped: Record<ColumnKey, UserTask[]> = {
       reach_out: [],
@@ -233,6 +275,28 @@ function TasksPage() {
     }
     return grouped;
   }, [tasks]);
+
+  const groupedByColumn = useMemo(() => {
+    const result: Record<ColumnKey, AccountGroup[]> = {
+      reach_out: [], follow_up: [], prepare: [], investigate: [], admin: [],
+    };
+    for (const col of Object.keys(tasksByColumn) as ColumnKey[]) {
+      const byAccount = new Map<string, UserTask[]>();
+      for (const t of tasksByColumn[col]) {
+        const key = t.account_id ?? "__none__";
+        if (!byAccount.has(key)) byAccount.set(key, []);
+        byAccount.get(key)!.push(t);
+      }
+      result[col] = Array.from(byAccount.entries()).map(([accId, accTasks]) => ({
+        account_id: accId === "__none__" ? null : accId,
+        account_name: accTasks[0].account_name,
+        tasks: accTasks,
+        highestPriority: accTasks.some(t => t.priority === "high") ? "high"
+          : accTasks.some(t => t.priority === "medium") ? "medium" : "low",
+      }));
+    }
+    return result;
+  }, [tasksByColumn]);
 
   const handleComplete = useCallback((taskId: string, resolutionNote: string) => {
     updateTask.mutate({ task_id: taskId, status: "done", resolution_note: resolutionNote || undefined });
@@ -320,16 +384,41 @@ function TasksPage() {
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
-              {tasksByColumn[key].map((task) => (
-                <TaskCard
-                  key={task.task_id}
-                  task={task}
-                  onComplete={handleComplete}
-                  onDismiss={handleDismiss}
-                  onSnooze={handleSnooze}
-                  onDragStart={handleDragStart}
-                />
-              ))}
+              {groupedByColumn[key].map((group) => {
+                if (group.tasks.length === 1) {
+                  return (
+                    <TaskCard
+                      key={group.tasks[0].task_id}
+                      task={group.tasks[0]}
+                      onComplete={handleComplete}
+                      onDismiss={handleDismiss}
+                      onSnooze={handleSnooze}
+                      onDragStart={handleDragStart}
+                    />
+                  );
+                }
+                const groupKey = `${key}-${group.account_id}`;
+                const isExpanded = expandedGroups.has(groupKey);
+                return (
+                  <div key={groupKey} className="space-y-1">
+                    <AccountGroupHeader
+                      group={group}
+                      expanded={isExpanded}
+                      onToggle={() => toggleGroup(groupKey)}
+                    />
+                    {isExpanded && group.tasks.map(task => (
+                      <TaskCard
+                        key={task.task_id}
+                        task={task}
+                        onComplete={handleComplete}
+                        onDismiss={handleDismiss}
+                        onSnooze={handleSnooze}
+                        onDragStart={handleDragStart}
+                      />
+                    ))}
+                  </div>
+                );
+              })}
             </div>
             <div className="border-t border-slate-200/60 dark:border-slate-700/60">
               <QuickAdd columnType={key} onCreate={handleCreate} />

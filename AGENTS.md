@@ -6,11 +6,21 @@
 
 1. **Invoke `$start-day`** — syncs main, checks for stale worktrees, lists open PRs, primes board triage. Do this even if the user jumps straight to a task description.
 2. **Switch to plan mode** — develop a concrete plan before touching any file. Present the plan for user review.
-3. **If the plan produces multiple changes**: decompose into SnowBoard tickets by invoking `$create-task` for each.
-4. **For each unit of work**: invoke `$start-feature` to create a branch (worktree mode if parallel). Never edit files on main.
-5. **After implementation**: self-review against Karpathy P1-P4, push, open PR, wait for CI (5 gates), then merge. Invoke `$finish-feature` to clean up.
+3. **Wait for user approval** — do NOT auto-execute. The user may have parallel workstreams, conflicting branches, or context that changes the plan. Always prompt: "Ready to execute?" before switching to agent mode and beginning implementation.
+4. **If the plan produces multiple changes**: decompose into SnowBoard tickets by invoking `$create-task` for each.
+5. **For each unit of work**: invoke `$start-feature` to create a branch (worktree mode if parallel). Never edit files on main.
+6. **After implementation**: self-review against Karpathy P1-P4, push, open PR, wait for CI (5 gates), then merge. Invoke `$finish-feature` to clean up.
 
 **If you skip these steps and edit files directly on main, you are violating the project workflow. Stop, stash your changes, and start over from step 1.**
+
+**CRITICAL: Never auto-execute.** The agent must always confirm with the user before:
+- Switching from plan mode to agent mode
+- Creating branches or worktrees
+- Running DDL/DML against Snowflake
+- Merging PRs
+- Starting or stopping Docker containers
+
+This avoids collisions when multiple agents or workstreams are active simultaneously.
 
 ---
 
