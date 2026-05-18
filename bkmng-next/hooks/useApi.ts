@@ -1653,3 +1653,87 @@ export function useDeleteFlagOverride() {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Tasks (ACE Task Board)
+// ---------------------------------------------------------------------------
+
+export type UserTask = {
+  task_id: string;
+  user_email: string;
+  account_id: string | null;
+  account_name: string | null;
+  title: string;
+  description: string | null;
+  column_type: "reach_out" | "follow_up" | "prepare" | "investigate" | "admin";
+  priority: "high" | "medium" | "low";
+  source: string | null;
+  source_ref: string | null;
+  status: "open" | "done" | "dismissed" | "snoozed";
+  due_hint: string | null;
+  user_context: string | null;
+  resolution_note: string | null;
+  snoozed_until: string | null;
+  created_at: string | null;
+  completed_at: string | null;
+  dismissed_at: string | null;
+};
+
+export type TaskCounts = {
+  total_open: number;
+  high_priority: number;
+  reach_out: number;
+  follow_up: number;
+  prepare: number;
+  investigate: number;
+  admin: number;
+};
+
+export function useUserTasks(status?: string) {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  const qs = params.toString() ? `?${params.toString()}` : "";
+  return useQuery<UserTask[]>({
+    queryKey: ["user-tasks", status ?? "open"],
+    queryFn: () => apiFetch<UserTask[]>(`/api/tasks${qs}`),
+    staleTime: 30_000,
+  });
+}
+
+export function useTaskCounts() {
+  return useQuery<TaskCounts>({
+    queryKey: ["task-counts"],
+    queryFn: () => apiFetch<TaskCounts>("/api/tasks/counts"),
+    staleTime: 30_000,
+  });
+}
+
+export function useCreateTask() {
+  const qc = useQueryClient();
+  return useMutation<UserTask, unknown, { title: string; account_id?: string; account_name?: string; column_type?: string; priority?: string; description?: string; due_hint?: string }>({
+    mutationFn: (body) =>
+      apiFetch<UserTask>("/api/tasks", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-tasks"] });
+      qc.invalidateQueries({ queryKey: ["task-counts"] });
+    },
+  });
+}
+
+export function useUpdateTask() {
+  const qc = useQueryClient();
+  return useMutation<UserTask, unknown, { task_id: string; status?: string; column_type?: string; priority?: string; user_context?: string; resolution_note?: string; snooze_preset?: string }>({
+    mutationFn: ({ task_id, ...body }) =>
+      apiFetch<UserTask>(`/api/tasks/${task_id}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-tasks"] });
+      qc.invalidateQueries({ queryKey: ["task-counts"] });
+    },
+  });
+}
+

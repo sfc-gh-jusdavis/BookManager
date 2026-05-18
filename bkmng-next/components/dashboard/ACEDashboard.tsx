@@ -17,6 +17,7 @@ import {
   type GongCall, type NBAItem, type NBAResponse, type FeatureAdoption, type AlertItem, type CompositePattern, type UpcomingMeeting,
 } from "@/hooks/useApi";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useFeatureFlag } from "@/context/FeatureFlagContext";
 
 // ─── types ────────────────────────────────────────────────────────────────────
 type Account = {
@@ -261,6 +262,8 @@ export function ACEDashboard() {
   const { data: nbaResponse, isLoading: nbaLoading } = useNBA() as { data: NBAResponse | undefined; isLoading: boolean };
   const clientItems = nbaResponse?.client ?? [];
   const adminItems = nbaResponse?.admin ?? [];
+  const showAdminTasks = useFeatureFlag("dashboard_admin_tasks");
+  const visibleAdmin = showAdminTasks ? adminItems : [];
   const { data: situations = [] } = useSituations() as { data: CompositePattern[] };
   const { data: recentAdoptions = [] } = useRecentAdoptions(7) as { data: FeatureAdoption[] };
   const { data: alerts = [] } = useAlerts() as { data: AlertItem[] };
@@ -348,14 +351,14 @@ export function ACEDashboard() {
   const unreadCount = alertCount?.count ?? 0;
 
   const brief = useMemo(() => {
-    if (highCount === 0 && unreadCount === 0 && adminItems.length === 0)
+    if (highCount === 0 && unreadCount === 0 && visibleAdmin.length === 0)
       return "Your book looks healthy today — no urgent items.";
     const parts: string[] = [];
     if (highCount > 0) parts.push(`${highCount} high-priority signal${highCount !== 1 ? "s" : ""}`);
     if (unreadCount > 0) parts.push(`${unreadCount} unread alert${unreadCount !== 1 ? "s" : ""}`);
-    if (adminItems.length > 0) parts.push(`${adminItems.length} admin task${adminItems.length !== 1 ? "s" : ""}`);
+    if (visibleAdmin.length > 0) parts.push(`${visibleAdmin.length} admin task${visibleAdmin.length !== 1 ? "s" : ""}`);
     return `${parts.join(", ")} need${parts.length === 1 && highCount === 1 ? "s" : ""} your attention.`;
-  }, [highCount, unreadCount, adminItems.length]);
+  }, [highCount, unreadCount, visibleAdmin.length]);
 
   const dayStr = useMemo(
     () => today.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }),
@@ -451,8 +454,8 @@ export function ACEDashboard() {
             <p className="text-xs text-slate-500 mt-0.5">Active Signals</p>
             {highCount > 0
               ? <p className="text-[10px] text-red-500 font-medium mt-1">{highCount} high priority</p>
-              : adminItems.length > 0
-              ? <p className="text-[10px] text-slate-400 mt-1">{adminItems.length} admin tasks</p>
+              : visibleAdmin.length > 0
+              ? <p className="text-[10px] text-slate-400 mt-1">{visibleAdmin.length} admin tasks</p>
               : <p className="text-[10px] text-slate-400 mt-1">No urgent items</p>
             }
           </CardContent>
@@ -598,14 +601,14 @@ export function ACEDashboard() {
           )}
 
           {/* ── Admin Tasks ──────────────────────────────────────────────────── */}
-          {adminItems.length > 0 && (
+          {visibleAdmin.length > 0 && (
             <div className="mt-4">
               <div className="flex items-center gap-2 mb-2">
                 <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">Admin Tasks</span>
-                <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{adminItems.length}</span>
+                <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-full">{visibleAdmin.length}</span>
               </div>
               <div className="space-y-1.5">
-                {adminItems.map((item) => {
+                {visibleAdmin.map((item) => {
                   const label = SIGNAL_LABELS[item.signal_type] ?? item.signal_type;
                   return (
                     <div key={item.id} className="border border-slate-100 border-l-2 border-l-slate-200 rounded-lg bg-white px-3 py-2 hover:bg-slate-50/80 transition-colors">

@@ -14,6 +14,7 @@ import {
   Bell,
   Settings,
   GanttChart,
+  CheckSquare,
 } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useFeatureFlag } from "@/context/FeatureFlagContext";
@@ -30,6 +31,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { href: "/", label: "Dashboard", icon: <LayoutDashboard size={16} /> },
   { href: "/accounts", label: "Accounts", icon: <Building2 size={16} /> },
+  { href: "/tasks", label: "Tasks", icon: <CheckSquare size={16} /> },
   { href: "/forecasts", label: "Forecasts", icon: <TrendingUp size={16} /> },
   { href: "/timeline", label: "Timeline", icon: <GanttChart size={16} /> },
   { href: "/tmrs", label: "TMRs", icon: <ClipboardList size={16} /> },
@@ -56,6 +58,7 @@ export function Sidebar() {
   const pageForecastsEnabled = useFeatureFlag("page_forecasts");
   const pageTimelineEnabled = useFeatureFlag("page_timeline");
   const pageTeamEnabled = useFeatureFlag("page_team");
+  const pageTasksEnabled = useFeatureFlag("page_tasks");
   const { data: alertCountData } = useAlertCount();
   const unreadCount = alertCountData?.count ?? 0;
 
@@ -67,6 +70,7 @@ export function Sidebar() {
     if (item.href === "/forecasts" && !pageForecastsEnabled) return false;
     if (item.href === "/timeline" && !pageTimelineEnabled) return false;
     if (item.href === "/team" && !pageTeamEnabled) return false;
+    if (item.href === "/tasks" && !pageTasksEnabled) return false;
     return true;
   });
 
