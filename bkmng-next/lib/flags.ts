@@ -64,6 +64,12 @@ export const FEATURE_FLAGS = {
   page_ace: { description: "Ask ACE route", category: "core", default_enabled: false },
   page_timeline: { description: "Global timeline route", category: "core", default_enabled: false },
   page_alerts: { description: "Alerts inbox route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
+  page_tasks: {
+    description: "Task board route",
+    category: "core",
+    default_enabled: false,
+    enable_for_users: ["jusdavis"],
+  },
   page_settings: { description: "Settings route", category: "core", default_enabled: true, enable_for_users: ["jusdavis"] },
 
   // ===== Beta =====

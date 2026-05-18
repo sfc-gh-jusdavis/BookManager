@@ -45,6 +45,7 @@ FEATURE_FLAGS: Dict[str, FlagDef] = {
     "page_ace": {"description": "Ask ACE route", "category": "core", "default_enabled": False},
     "page_timeline": {"description": "Global timeline route", "category": "core", "default_enabled": False},
     "page_alerts": {"description": "Alerts inbox route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
+    "page_tasks": {"description": "Task board route", "category": "core", "default_enabled": False, "enable_for_users": JUSDAVIS},
     "page_settings": {"description": "Settings route", "category": "core", "default_enabled": True, "enable_for_users": JUSDAVIS},
 
     # Beta
