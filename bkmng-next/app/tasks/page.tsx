@@ -385,18 +385,6 @@ function TasksPage() {
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
               {groupedByColumn[key].map((group) => {
-                if (group.tasks.length === 1) {
-                  return (
-                    <TaskCard
-                      key={group.tasks[0].task_id}
-                      task={group.tasks[0]}
-                      onComplete={handleComplete}
-                      onDismiss={handleDismiss}
-                      onSnooze={handleSnooze}
-                      onDragStart={handleDragStart}
-                    />
-                  );
-                }
                 const groupKey = `${key}-${group.account_id}`;
                 const isExpanded = expandedGroups.has(groupKey);
                 return (
