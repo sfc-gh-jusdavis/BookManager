@@ -9,6 +9,7 @@ _TYPE_TO_CATEGORY: dict[str, str] = {
     # Active
     "no_interaction_14d":   "engagement",
     "no_interaction_7d":    "engagement",
+    "cadence_slipping":     "engagement",
     "new_feature_adoption": "engagement",
     "consumption_spike":    "consumption",
     "consumption_dip":      "consumption",
@@ -87,12 +88,13 @@ class CoreProvider(SignalProvider):
             ORDER BY
                 CASE s.PRIORITY WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
                 CASE s.SIGNAL_TYPE
-                    WHEN 'no_interaction_14d' THEN 0
-                    WHEN 'consumption_spike'  THEN 1
-                    WHEN 'champion_silent'    THEN 2
-                    WHEN 'capacity_warning'   THEN 3
-                    WHEN 'blocker'            THEN 4
-                    ELSE 5 END
+                    WHEN 'cadence_slipping'   THEN 0
+                    WHEN 'no_interaction_14d' THEN 1
+                    WHEN 'consumption_spike'  THEN 2
+                    WHEN 'champion_silent'    THEN 3
+                    WHEN 'capacity_warning'   THEN 4
+                    WHEN 'blocker'            THEN 5
+                    ELSE 6 END
             """,
             params,
         )
