@@ -32,6 +32,18 @@ BEGIN
       )
       AND (p.ENABLED IS NULL OR p.ENABLED = TRUE);
 
+    -- Remove alerts whose accounts are now stopped or complete.
+    -- Mirrors the signal-suppression rule in SP_REFRESH_BKMNG_ONT_ACCOUNT_SIGNALS
+    -- so the kanban does not retain alerts for closed-out accounts. Runs AFTER
+    -- the INSERT so it also clears alerts created by signal sources that don''t
+    -- self-filter (e.g. external integrations adding signals with non-core SOURCE).
+    DELETE FROM TEMP.JUSDAVIS.BKMNG_USER_ALERTS
+    WHERE ACCOUNT_ID IN (
+        SELECT ACCOUNT_ID
+        FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+        WHERE LOWER(STATUS) IN (''stopped'', ''complete'')
+    );
+
     RETURN ''OK: '' || (SELECT COUNT(*)::VARCHAR FROM TEMP.JUSDAVIS.BKMNG_USER_ALERTS
                       WHERE IS_DISMISSED = FALSE AND IS_READ = FALSE) || '' active alerts'';
 END

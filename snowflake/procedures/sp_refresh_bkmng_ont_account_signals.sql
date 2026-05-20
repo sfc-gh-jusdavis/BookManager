@@ -406,6 +406,18 @@ BEGIN
         END
     WHERE SOURCE IS NULL;
 
+    -- Suppress signals for accounts that are stopped or complete.
+    -- Applied as a final filter so every signal type is covered without
+    -- modifying each INSERT block. STATUS source of truth: BKMNG_ACCOUNT_SETTINGS
+    -- projected onto BKMNG_ONT_ACCOUNTS by SP_REFRESH_BKMNG_ONT_ACCOUNTS.
+    DELETE FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+    WHERE SOURCE = ''core''
+      AND ACCOUNT_ID IN (
+          SELECT ACCOUNT_ID
+          FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+          WHERE LOWER(STATUS) IN (''stopped'', ''complete'')
+      );
+
     RETURN ''OK: '' || (SELECT COUNT(*)::VARCHAR FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS) || '' signals generated'';
 END
 ';

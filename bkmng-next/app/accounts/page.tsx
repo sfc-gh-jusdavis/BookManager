@@ -274,7 +274,8 @@ function ExpandedRow({ account, useCases, rev, sigCounts }: { account: Account; 
   );
 }
 
-const STATUS_OPTIONS = ["All", "not started", "active", "complete", "stopped", "paused"];
+const STATUS_OPTIONS = ["not started", "active", "paused", "complete", "stopped"];
+const DEFAULT_STATUS_FILTER = ["not started", "active", "paused"];
 const ENGAGEMENT_OPTIONS = ["All", "Low", "Normal", "High"];
 
 function AccountsPage() {
@@ -287,7 +288,7 @@ function AccountsPage() {
 
   const [search, setSearch] = useState("");
   const { refresh: refreshBook, isRefreshing: bookRefreshing } = useRefreshBook();
-  const [statusFilter, setStatusFilter] = useState("All");
+  const [statusFilter, setStatusFilter] = useState<string[]>(DEFAULT_STATUS_FILTER);
   const [engFilter, setEngFilter] = useState("All");
   const [industryFilter, setIndustryFilter] = useState("All");
   const [aceFilter, setAceFilter] = useState("All");
@@ -316,7 +317,7 @@ function AccountsPage() {
     const q = search.trim().toLowerCase();
     return roleScoped.filter((a) => {
       if (q && !a.account_name.toLowerCase().includes(q)) return false;
-      if (statusFilter !== "All" && a.status !== statusFilter) return false;
+      if (!statusFilter.includes(a.status)) return false;
       if (engFilter !== "All" && a.engagement_status !== engFilter) return false;
       if (industryFilter !== "All" && a.industry !== industryFilter) return false;
       if (aceFilter !== "All" && a.ace_assigned !== aceFilter) return false;
@@ -363,7 +364,10 @@ function AccountsPage() {
     return sortDir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />;
   }
 
-  const hasFilters = search || statusFilter !== "All" || engFilter !== "All" || industryFilter !== "All" || aceFilter !== "All";
+  const statusFilterChanged =
+    statusFilter.length !== DEFAULT_STATUS_FILTER.length ||
+    !DEFAULT_STATUS_FILTER.every((s) => statusFilter.includes(s));
+  const hasFilters = search || statusFilterChanged || engFilter !== "All" || industryFilter !== "All" || aceFilter !== "All";
 
   const COL_HEADERS: { field: SortField; label: string }[] = [
     { field: "account_name", label: "Account Name" },
@@ -402,10 +406,30 @@ function AccountsPage() {
           {ENGAGEMENT_OPTIONS.map((o) => <option key={o} value={o}>{o === "All" ? "All engagements" : o}</option>)}
         </select>
 
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
-          className="py-1.5 pl-2.5 pr-7 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
-          {STATUS_OPTIONS.map((o) => <option key={o} value={o}>{o === "All" ? "All statuses" : o}</option>)}
-        </select>
+        <div className="flex items-center gap-1" role="group" aria-label="Filter by status">
+          {STATUS_OPTIONS.map((s) => {
+            const active = statusFilter.includes(s);
+            return (
+              <button
+                key={s}
+                type="button"
+                onClick={() =>
+                  setStatusFilter((prev) =>
+                    prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]
+                  )
+                }
+                aria-pressed={active}
+                className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-colors ${
+                  active
+                    ? STATUS_BADGE[s] ?? "bg-slate-100 text-slate-700 border-slate-200"
+                    : "bg-white text-slate-400 border-slate-200 hover:text-slate-600 hover:border-slate-300"
+                }`}
+              >
+                {s}
+              </button>
+            );
+          })}
+        </div>
 
         <select value={industryFilter} onChange={(e) => setIndustryFilter(e.target.value)}
           className="py-1.5 pl-2.5 pr-7 text-sm border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-sky-500">
@@ -431,7 +455,7 @@ function AccountsPage() {
 
         {hasFilters && (
           <button type="button"
-            onClick={() => { setSearch(""); setStatusFilter("All"); setEngFilter("All"); setIndustryFilter("All"); setAceFilter("All"); }}
+            onClick={() => { setSearch(""); setStatusFilter(DEFAULT_STATUS_FILTER); setEngFilter("All"); setIndustryFilter("All"); setAceFilter("All"); }}
             className="flex items-center gap-1 text-xs text-slate-500 hover:text-slate-800">
             <X size={12} /> Clear
           </button>

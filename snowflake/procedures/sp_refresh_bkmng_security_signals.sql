@@ -30,6 +30,15 @@ WHERE sp.STATUS IN (''not_started'', ''partial'')
   AND sp.INDUSTRY_PRIORITY = ''required''
   AND sp.PRIORITY IN (''critical'', ''high'');
 
+-- Suppress security signals for accounts that are stopped or complete.
+DELETE FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS
+WHERE SOURCE = ''security_posture''
+  AND ACCOUNT_ID IN (
+      SELECT ACCOUNT_ID
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      WHERE LOWER(STATUS) IN (''stopped'', ''complete'')
+  );
+
 RETURN ''OK: '' || (SELECT COUNT(*)::VARCHAR FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNT_SIGNALS WHERE SOURCE = ''security_posture'') || '' security signals'';
 END;
 ';
