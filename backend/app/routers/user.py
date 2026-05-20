@@ -145,6 +145,35 @@ ALERT_CATALOG = [
         "default_priority": "medium",
     },
     {
+        "signal_type": "champion_silent",
+        "label": "Champion Silent",
+        "description": (
+            "Fires when an identified champion at an account has not been "
+            "contacted in 30+ days."
+        ),
+        "how_generated": (
+            "Checked daily. Requires CHAMPION_COUNT > 0 and "
+            "CHAMPION_DAYS_SINCE_CALL > 30 from BKMNG_ONT_ACCOUNTS. "
+            "Excludes accounts in Churned status."
+        ),
+        "category": "engagement",
+        "default_priority": "medium",
+    },
+    {
+        "signal_type": "meeting_momentum",
+        "label": "Meeting Momentum",
+        "description": (
+            "Positive signal: account has had 3 or more meetings in the past 14 days. "
+            "Surfaces accounts with strong engagement to celebrate or replicate."
+        ),
+        "how_generated": (
+            "Checked daily. Queries BKMNG_UNIFIED_MEETINGS for past meetings in "
+            "the last 14 days; fires when count >= 3."
+        ),
+        "category": "engagement",
+        "default_priority": "low",
+    },
+    {
         "signal_type": "new_feature_adoption",
         "label": "Feature Adoption",
         "description": (

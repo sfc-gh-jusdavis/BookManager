@@ -2,7 +2,7 @@
 
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
-import { ArrowUp, ArrowDown, ChevronRight, ChevronDown, Search, X, Plus, AlertTriangle, Zap, CalendarCheck2, Mail, TrendingDown, RefreshCw } from "lucide-react";
+import { ArrowUp, ArrowDown, ChevronRight, ChevronDown, Search, X, Plus, AlertTriangle, Zap, CalendarCheck2, CalendarX, Mail, TrendingDown, RefreshCw } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { useAccounts, useUseCases, useAceDisplayNames, useAccountRevenueSummaries, useSignalCounts, useRefreshBook, type SignalCountEntry, type Account, type RevenueSummary } from "@/hooks/useApi";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -227,6 +227,36 @@ function ExpandedRow({ account, useCases, rev, sigCounts }: { account: Account; 
                     </span>
                     <span className="text-xs font-medium text-slate-700">{account.meetings_last_30d ?? 0}</span>
                   </div>
+                  {(() => {
+                    const lmd = account.last_meeting_date;
+                    if (!lmd) {
+                      return (
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1 text-xs text-slate-500">
+                            <CalendarX size={11} className="text-rose-500" />Last meeting
+                          </span>
+                          <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-1.5 py-0 text-[10px] font-medium text-rose-700">never</span>
+                        </div>
+                      );
+                    }
+                    const days = Math.floor((Date.now() - new Date(lmd).getTime()) / 86_400_000);
+                    const chipCls = days > 14
+                      ? "border-rose-200 bg-rose-50 text-rose-700"
+                      : days > 7
+                      ? "border-amber-200 bg-amber-50 text-amber-700"
+                      : "border-emerald-200 bg-emerald-50 text-emerald-700";
+                    const iconCls = days > 14 ? "text-rose-500" : days > 7 ? "text-amber-500" : "text-emerald-500";
+                    return (
+                      <div className="flex items-center justify-between">
+                        <span className="flex items-center gap-1 text-xs text-slate-500">
+                          <CalendarX size={11} className={iconCls} />Last meeting
+                        </span>
+                        <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[10px] font-medium ${chipCls}`}>
+                          {days}d ago
+                        </span>
+                      </div>
+                    );
+                  })()}
                   {(account.upcoming_meetings_5d ?? 0) > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-slate-500 pl-4">Upcoming (14d)</span>
