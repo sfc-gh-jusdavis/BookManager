@@ -1722,7 +1722,20 @@ export function useCreateTask() {
   });
 }
 
-export function useUpdateTask() {
+export function useMuteSignal() {
+  const qc = useQueryClient();
+  return useMutation<unknown, unknown, { task_id: string; reason: string }>({
+    mutationFn: ({ task_id, reason }) =>
+      apiFetch(`/api/tasks/${task_id}/mute`, {
+        method: "POST",
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["user-tasks"] });
+      qc.invalidateQueries({ queryKey: ["task-counts"] });
+    },
+  });
+}export function useUpdateTask() {
   const qc = useQueryClient();
   return useMutation<UserTask, unknown, { task_id: string; status?: string; column_type?: string; priority?: string; user_context?: string; resolution_note?: string; snooze_preset?: string }>({
     mutationFn: ({ task_id, ...body }) =>

@@ -7,6 +7,7 @@ import {
   useUpdateTask,
   useTaskCounts,
   useAccounts,
+  useMuteSignal,
   UserTask,
   Account,
 } from "@/hooks/useApi";
@@ -23,6 +24,7 @@ import {
   MoreHorizontal,
   GripVertical,
   ChevronRight,
+  BellOff,
 } from "lucide-react";
 import Link from "next/link";
 import { withFlagGate } from "@/components/ui/flag-gate";
@@ -93,17 +95,22 @@ function TaskCard({
   onComplete,
   onDismiss,
   onSnooze,
+  onMute,
   onDragStart,
 }: {
   task: UserTask;
   onComplete: (taskId: string, note: string) => void;
   onDismiss: (taskId: string) => void;
   onSnooze: (taskId: string, preset: string) => void;
+  onMute: (taskId: string, reason: string) => void;
   onDragStart: (e: React.DragEvent, taskId: string) => void;
 }) {
   const [showComplete, setShowComplete] = useState(false);
   const [note, setNote] = useState("");
   const [showMenu, setShowMenu] = useState(false);
+  const [showMuteSub, setShowMuteSub] = useState(false);
+  const [customReason, setCustomReason] = useState("");
+  const isSignalSourced = (task.source ?? "").startsWith("signal:");
 
   return (
     <div
@@ -176,6 +183,46 @@ function TaskCard({
                 >
                   <Clock className="w-3 h-3 inline mr-1.5" />Snooze — 1 week
                 </button>
+                {isSignalSourced && (
+                  <>
+                    <div className="border-t border-slate-200 dark:border-slate-700 my-1" />
+                    {!showMuteSub ? (
+                      <button
+                        onClick={() => setShowMuteSub(true)}
+                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 dark:hover:bg-slate-700"
+                      >
+                        <BellOff className="w-3 h-3 inline mr-1.5" />Mute signal…
+                      </button>
+                    ) : (
+                      <div className="px-2 py-1.5 space-y-1">
+                        <div className="text-[10px] text-slate-400 uppercase mb-1">Mute reason</div>
+                        {["Comms via Slack", "Comms via Teams", "Comms via in-person"].map(r => (
+                          <button
+                            key={r}
+                            onClick={() => { onMute(task.task_id, r); setShowMenu(false); setShowMuteSub(false); }}
+                            className="w-full text-left px-2 py-1 text-xs hover:bg-slate-50 dark:hover:bg-slate-700 rounded"
+                          >
+                            {r}
+                          </button>
+                        ))}
+                        <input
+                          value={customReason}
+                          onChange={(e) => setCustomReason(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && customReason.trim()) {
+                              onMute(task.task_id, customReason.trim());
+                              setShowMenu(false);
+                              setShowMuteSub(false);
+                              setCustomReason("");
+                            }
+                          }}
+                          placeholder="Custom reason…"
+                          className="w-full text-xs border rounded px-2 py-1 bg-white dark:bg-slate-900"
+                        />
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>
@@ -319,6 +366,7 @@ function TasksPage() {
   const { data: accounts = [] } = useAccounts();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
+  const muteSignal = useMuteSignal();
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
@@ -384,6 +432,10 @@ function TasksPage() {
   const handleSnooze = useCallback((taskId: string, preset: string) => {
     updateTask.mutate({ task_id: taskId, snooze_preset: preset });
   }, [updateTask]);
+
+  const handleMute = useCallback((taskId: string, reason: string) => {
+    muteSignal.mutate({ task_id: taskId, reason });
+  }, [muteSignal]);
 
   const handleCreate = useCallback((input: { title: string; column_type: ColumnKey; priority: string; account_id?: string; account_name?: string; description?: string }) => {
     createTask.mutate(input);
@@ -479,6 +531,7 @@ function TasksPage() {
                         onComplete={handleComplete}
                         onDismiss={handleDismiss}
                         onSnooze={handleSnooze}
+                        onMute={handleMute}
                         onDragStart={handleDragStart}
                       />
                     ))}

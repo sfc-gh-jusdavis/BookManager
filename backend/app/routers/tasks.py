@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
@@ -232,6 +232,60 @@ async def create_task(
         completed_at=r.get("COMPLETED_AT"),
         dismissed_at=r.get("DISMISSED_AT"),
     )
+
+
+class MuteSignalRequest(BaseModel):
+    reason: str
+
+
+@router.post("/{task_id}/mute", status_code=204)
+async def mute_signal_for_task(
+    task_id: str,
+    body: MuteSignalRequest,
+    user: CurrentUser = Depends(get_current_user),
+    data: SnowflakeDataService = Depends(get_data_service),
+) -> Response:
+    cur = data._cursor()
+    cur.execute(
+        """
+        SELECT ACCOUNT_ID, SOURCE
+        FROM BKMNG_USER_TASKS
+        WHERE TASK_ID = %s AND USER_EMAIL = %s
+        """,
+        (task_id, user.email),
+    )
+    r = cur.fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    account_id = r.get("ACCOUNT_ID")
+    source = r.get("SOURCE") or ""
+    if not account_id or not source.startswith("signal:"):
+        raise HTTPException(status_code=400, detail="Task is not signal-derived or has no account")
+
+    signal_type = source.removeprefix("signal:")
+
+    cur.execute(
+        """
+        INSERT INTO BKMNG_SIGNAL_MUTES (USER_EMAIL, ACCOUNT_ID, SIGNAL_TYPE, REASON)
+        SELECT %s, %s, %s, %s
+        WHERE NOT EXISTS (
+            SELECT 1 FROM BKMNG_SIGNAL_MUTES
+            WHERE USER_EMAIL = %s AND ACCOUNT_ID = %s AND SIGNAL_TYPE = %s
+        )
+        """,
+        (user.email, account_id, signal_type, body.reason, user.email, account_id, signal_type),
+    )
+
+    cur.execute(
+        """
+        UPDATE BKMNG_USER_TASKS
+        SET STATUS = 'dismissed', DISMISSED_AT = CURRENT_TIMESTAMP()
+        WHERE TASK_ID = %s AND USER_EMAIL = %s
+        """,
+        (task_id, user.email),
+    )
+    return Response(status_code=204)
 
 
 @router.patch("/{task_id}", response_model=UserTask)
