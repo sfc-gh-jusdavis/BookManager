@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from app.auth.dependencies import get_current_user
@@ -244,7 +244,7 @@ async def mute_signal_for_task(
     body: MuteSignalRequest,
     user: CurrentUser = Depends(get_current_user),
     data: SnowflakeDataService = Depends(get_data_service),
-) -> None:
+) -> Response:
     cur = data._cursor()
     cur.execute(
         """
@@ -285,7 +285,7 @@ async def mute_signal_for_task(
         """,
         (task_id, user.email),
     )
-    return None
+    return Response(status_code=204)
 
 
 @router.patch("/{task_id}", response_model=UserTask)
