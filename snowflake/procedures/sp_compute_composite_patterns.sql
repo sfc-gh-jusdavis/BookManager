@@ -322,6 +322,15 @@ BEGIN
     AND (LAST_CONTEXT_AT IS NULL OR LAST_CONTEXT_AT < DATEADD(''day'', -60, CURRENT_TIMESTAMP()))
     AND (LAST_GONG_AT IS NULL OR LAST_GONG_AT < DATEADD(''day'', -30, CURRENT_TIMESTAMP()));
 
+  -- Suppress patterns for accounts that are stopped or complete.
+  -- Mirrors the signal-suppression rule in SP_REFRESH_BKMNG_ONT_ACCOUNT_SIGNALS.
+  DELETE FROM TEMP.JUSDAVIS.BKMNG_COMPOSITE_PATTERNS
+  WHERE ACCOUNT_ID IN (
+      SELECT ACCOUNT_ID
+      FROM TEMP.JUSDAVIS.BKMNG_ONT_ACCOUNTS
+      WHERE LOWER(STATUS) IN (''stopped'', ''complete'')
+  );
+
   RETURN ''Composite patterns computed. Rows: '' || (SELECT COUNT(*) FROM TEMP.JUSDAVIS.BKMNG_COMPOSITE_PATTERNS)::VARCHAR;
 END;
 ';
