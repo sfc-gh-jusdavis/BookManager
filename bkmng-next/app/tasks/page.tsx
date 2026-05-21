@@ -6,7 +6,9 @@ import {
   useCreateTask,
   useUpdateTask,
   useTaskCounts,
+  useAccounts,
   UserTask,
+  Account,
 } from "@/hooks/useApi";
 import {
   Phone,
@@ -60,6 +62,7 @@ function AccountGroupHeader({ group, expanded, onToggle }: {
   expanded: boolean;
   onToggle: () => void;
 }) {
+  const isGeneral = !group.account_id;
   return (
     <button
       onClick={onToggle}
@@ -67,13 +70,19 @@ function AccountGroupHeader({ group, expanded, onToggle }: {
     >
       <ChevronRight className={`w-3 h-3 text-slate-400 transition-transform ${expanded ? "rotate-90" : ""}`} />
       <span className={`w-2 h-2 rounded-full shrink-0 ${PRIORITY_DOT[group.highestPriority]}`} />
-      <Link
-        href={`/accounts/${group.account_id}`}
-        onClick={(e) => e.stopPropagation()}
-        className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate hover:text-sky-600"
-      >
-        {group.account_name}
-      </Link>
+      {isGeneral ? (
+        <span className="text-xs font-medium text-slate-500 dark:text-slate-400 italic truncate">
+          General
+        </span>
+      ) : (
+        <Link
+          href={`/accounts/${group.account_id}`}
+          onClick={(e) => e.stopPropagation()}
+          className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate hover:text-sky-600"
+        >
+          {group.account_name}
+        </Link>
+      )}
       <span className="ml-auto text-[10px] text-slate-400 font-medium">{group.tasks.length}</span>
     </button>
   );
@@ -201,42 +210,103 @@ function TaskCard({
   );
 }
 
-function QuickAdd({ columnType, onCreate }: { columnType: ColumnKey; onCreate: (title: string, col: ColumnKey) => void }) {
+function AddTaskForm({ columnType, columnLabel, accounts, onCreate }: {
+  columnType: ColumnKey;
+  columnLabel: string;
+  accounts: Account[];
+  onCreate: (input: { title: string; column_type: ColumnKey; priority: string; account_id?: string; account_name?: string; description?: string }) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [priority, setPriority] = useState<"low" | "medium" | "high">("medium");
+  const [accountInput, setAccountInput] = useState("");
+  const [description, setDescription] = useState("");
+
+  const reset = () => {
+    setTitle("");
+    setPriority("medium");
+    setAccountInput("");
+    setDescription("");
+    setOpen(false);
+  };
 
   const handleSubmit = () => {
-    if (title.trim()) {
-      onCreate(title.trim(), columnType);
-      setTitle("");
-      setOpen(false);
-    }
+    if (!title.trim()) return;
+    const matched = accounts.find(a => a.account_name === accountInput.trim());
+    onCreate({
+      title: title.trim(),
+      column_type: columnType,
+      priority,
+      account_id: matched?.account_id,
+      account_name: matched?.account_name,
+      description: description.trim() || undefined,
+    });
+    reset();
   };
 
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50 dark:hover:bg-slate-800 rounded transition-colors"
+        className="w-full flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium text-sky-600 dark:text-sky-400 hover:bg-sky-50 dark:hover:bg-slate-800 border border-dashed border-slate-300 dark:border-slate-600 hover:border-sky-400 rounded transition-colors"
       >
-        <Plus className="w-3 h-3" /> Add task
+        <Plus className="w-3.5 h-3.5" /> Add task to {columnLabel}
       </button>
     );
   }
 
+  const datalistId = `accounts-${columnType}`;
+
   return (
-    <div className="p-1.5">
+    <div className="p-2 border border-slate-200 dark:border-slate-700 rounded bg-white dark:bg-slate-800 space-y-2">
       <input
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => { if (e.key === "Enter") handleSubmit(); if (e.key === "Escape") { setOpen(false); setTitle(""); } }}
+        onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) handleSubmit(); if (e.key === "Escape") reset(); }}
         placeholder="Task title..."
         className="w-full text-xs border rounded px-2 py-1.5 bg-white dark:bg-slate-900"
       />
-      <div className="flex gap-1.5 mt-1.5">
-        <button onClick={handleSubmit} className="px-2 py-1 text-xs bg-sky-600 text-white rounded hover:bg-sky-700">Add</button>
-        <button onClick={() => { setOpen(false); setTitle(""); }} className="px-2 py-1 text-xs text-slate-500">Cancel</button>
+      <div className="flex gap-1">
+        {(["low", "medium", "high"] as const).map(p => (
+          <button
+            key={p}
+            type="button"
+            onClick={() => setPriority(p)}
+            className={`flex-1 px-2 py-1 text-[11px] font-medium rounded border ${
+              priority === p
+                ? p === "high" ? "bg-red-50 border-red-300 text-red-700 dark:bg-red-900/30 dark:border-red-700 dark:text-red-300"
+                : p === "medium" ? "bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/30 dark:border-amber-700 dark:text-amber-300"
+                : "bg-slate-100 border-slate-300 text-slate-600 dark:bg-slate-700 dark:border-slate-500 dark:text-slate-300"
+                : "border-slate-200 text-slate-400 hover:text-slate-600 dark:border-slate-700 dark:hover:text-slate-300"
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <input
+        list={datalistId}
+        value={accountInput}
+        onChange={(e) => setAccountInput(e.target.value)}
+        placeholder="Account (leave blank for General)"
+        className="w-full text-xs border rounded px-2 py-1.5 bg-white dark:bg-slate-900"
+      />
+      <datalist id={datalistId}>
+        {accounts.map(a => (
+          <option key={a.account_id} value={a.account_name} />
+        ))}
+      </datalist>
+      <textarea
+        value={description}
+        onChange={(e) => setDescription(e.target.value)}
+        placeholder="Description (optional)"
+        rows={2}
+        className="w-full text-xs border rounded px-2 py-1.5 bg-white dark:bg-slate-900 resize-none"
+      />
+      <div className="flex gap-1.5">
+        <button onClick={handleSubmit} disabled={!title.trim()} className="px-2.5 py-1 text-xs bg-sky-600 text-white rounded hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed">Add</button>
+        <button onClick={reset} className="px-2.5 py-1 text-xs text-slate-500 hover:text-slate-700">Cancel</button>
       </div>
     </div>
   );
@@ -246,14 +316,15 @@ function TasksPage() {
   useFeatureFlag("page_tasks");
   const { data: tasks = [], isLoading } = useUserTasks("open");
   const { data: counts } = useTaskCounts();
+  const { data: accounts = [] } = useAccounts();
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
   const [draggedId, setDraggedId] = useState<string | null>(null);
 
-  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
   const toggleGroup = useCallback((key: string) => {
-    setExpandedGroups(prev => {
+    setCollapsedGroups(prev => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
@@ -287,13 +358,17 @@ function TasksPage() {
         if (!byAccount.has(key)) byAccount.set(key, []);
         byAccount.get(key)!.push(t);
       }
-      result[col] = Array.from(byAccount.entries()).map(([accId, accTasks]) => ({
+      result[col] = Array.from(byAccount.entries()).map(([accId, accTasks]): AccountGroup => ({
         account_id: accId === "__none__" ? null : accId,
         account_name: accTasks[0].account_name,
         tasks: accTasks,
         highestPriority: accTasks.some(t => t.priority === "high") ? "high"
           : accTasks.some(t => t.priority === "medium") ? "medium" : "low",
-      }));
+      })).sort((a, b) => {
+        if (!a.account_id && b.account_id) return -1;
+        if (a.account_id && !b.account_id) return 1;
+        return (a.account_name ?? "").localeCompare(b.account_name ?? "");
+      });
     }
     return result;
   }, [tasksByColumn]);
@@ -310,8 +385,8 @@ function TasksPage() {
     updateTask.mutate({ task_id: taskId, snooze_preset: preset });
   }, [updateTask]);
 
-  const handleCreate = useCallback((title: string, columnType: ColumnKey) => {
-    createTask.mutate({ title, column_type: columnType });
+  const handleCreate = useCallback((input: { title: string; column_type: ColumnKey; priority: string; account_id?: string; account_name?: string; description?: string }) => {
+    createTask.mutate(input);
   }, [createTask]);
 
   const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
@@ -383,10 +458,13 @@ function TasksPage() {
                 {tasksByColumn[key].length}
               </span>
             </div>
+            <div className="px-2 pt-2">
+              <AddTaskForm columnType={key} columnLabel={label} accounts={accounts} onCreate={handleCreate} />
+            </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-2">
               {groupedByColumn[key].map((group) => {
-                const groupKey = `${key}-${group.account_id}`;
-                const isExpanded = expandedGroups.has(groupKey);
+                const groupKey = `${key}-${group.account_id ?? "__none__"}`;
+                const isExpanded = !collapsedGroups.has(groupKey);
                 return (
                   <div key={groupKey} className="space-y-1">
                     <AccountGroupHeader
@@ -407,9 +485,6 @@ function TasksPage() {
                   </div>
                 );
               })}
-            </div>
-            <div className="border-t border-slate-200/60 dark:border-slate-700/60">
-              <QuickAdd columnType={key} onCreate={handleCreate} />
             </div>
           </div>
         ))}
