@@ -100,8 +100,9 @@ All skills are installed at `~/.cortex/skills/`. Each has trigger words in its d
 - **Frontend**: Next.js 16 (App Router) — `bkmng-next/`, port 3001
 - **Backend**: FastAPI (Python 3.11) — `backend/`, port 8000
 - **Database**: Snowflake `TEMP.JUSDAVIS` via connection `SNOWHOUSE_AWS_US_WEST_2`
-- **SPCS Service**: `BOOKMANAGER.DEMO.BKMNG_SERVICE` on JDAVIS_AWS1
-- **URL**: https://ar7vvu-sfsenorthamerica-jdavis-aws1.snowflakecomputing.app
+- **SPCS Service**: `TEMP.JUSDAVIS.BKMNG_SERVICE` on Snowhouse (`SE_ENABLEMENT_POOL`)
+- **URL**: TBD — run `make create-service-snowhouse` and check `SHOW ENDPOINTS IN SERVICE TEMP.JUSDAVIS.BKMNG_SERVICE`
+- **Legacy SPCS (JDAVIS_AWS1)**: `BOOKMANAGER.DEMO.BKMNG_SERVICE` — to be torn down after Snowhouse is confirmed
 
 ## Local Development
 
@@ -116,13 +117,24 @@ make clean           # full reset (wipes volumes — use if node_modules stale)
 
 Frontend: http://localhost:3001 | Backend: http://localhost:8000
 
-## SPCS Deployment
+## SPCS Deployment (Snowhouse — active)
 
 Only push to SPCS when a batch of changes is ready:
 
 ```bash
-make test-spcs-build   # verify SPCS image builds locally (no push)
-make deploy            # build + push + ALTER SERVICE (one command)
+make test-spcs-build          # verify SPCS image builds locally (no push)
+make create-service-snowhouse # FIRST TIME ONLY: creates TEMP.JUSDAVIS.BKMNG_SERVICE
+make deploy-snowhouse         # ongoing: build + push + ALTER SERVICE
+make logs-snowhouse           # tail container logs
+make restart-snowhouse        # suspend + resume without new image push
+```
+
+Note: `make deploy-snowhouse` opens a browser for Snowhouse SSO (externalbrowser) when pushing the image. Run from the host Mac, not inside Docker.
+
+## SPCS Deployment (JDAVIS_AWS1 — legacy, pending teardown)
+
+```bash
+make deploy            # build + push + ALTER SERVICE (BOOKMANAGER.DEMO.BKMNG_SERVICE)
 ```
 
 ## Critical Rules
@@ -156,7 +168,8 @@ make deploy            # build + push + ALTER SERVICE (one command)
 |------|---------|
 | `docker-compose.yml` | Local dev services (backend + frontend with hot-reload) |
 | `Dockerfile.spcs` | SPCS production multi-stage build |
-| `bkmng-spec-demo.yaml` | SPCS service specification |
+| `bkmng-spec-snowhouse.yaml` | SPCS spec for Snowhouse (active) |
+| `bkmng-spec-demo.yaml` | SPCS spec for JDAVIS_AWS1 (legacy) |
 | `start.sh` | SPCS container CMD (DO NOT overwrite) |
 | `dev-start.sh` | Local dev startup (opens Docker Desktop if needed) |
 | `Makefile` | All dev/deploy commands |
@@ -175,7 +188,8 @@ make deploy            # build + push + ALTER SERVICE (one command)
 ## Auth
 
 - Local dev: `X-Mock-User: <username>` header (always accepted)
-- SPCS: PAT-based auth via `SNOWFLAKE_PAT` env var (secret: `BKMNG_SNOWHOUSE_PAT`)
+- Snowhouse SPCS: OAuth token injected by platform at `/snowflake/session/token` — no PAT needed
+- JDAVIS_AWS1 SPCS (legacy): PAT-based auth via `SNOWFLAKE_PAT` env var (secret: `BKMNG_SNOWHOUSE_PAT`)
 - User table: `BKMNG_USERS` (19 users), read by `/auth/users` endpoint
 - Default dev user: configured via `LOCAL_DEFAULT_USER_ID` env var (or first row in BKMNG_USERS)
 
@@ -246,13 +260,13 @@ These are populated by API calls, not tasks. Do not create tasks for them:
 
 ## SPCS Network Rules
 
-SPCS containers are network-isolated. The service has an External Access Integration:
+**Snowhouse SPCS (active):** No EAI required. All queries go to the same Snowhouse account; the SPCS platform handles connectivity internally.
 
+**JDAVIS_AWS1 SPCS (legacy):** Cross-account to Snowhouse required an EAI:
 - Network Rule: `BOOKMANAGER.DEMO.BKMNG_SNOWHOUSE_RULE` (HOST_PORT EGRESS :443)
 - Hosts: `sfcogsops-snowhouse-aws-us-west-2.snowflakecomputing.com:443`, `sfc-ds2-customer-stage.s3.us-west-2.amazonaws.com:443`
-- EAI: `BKMNG_SNOWHOUSE_EAI` — attached via `ALTER SERVICE ... SET EXTERNAL_ACCESS_INTEGRATIONS = (BKMNG_SNOWHOUSE_EAI);`
-- After updating network rules: must SUSPEND + RESUME the service
-- The S3 host is required for large query result sets (fetched via presigned URL)
+- EAI: `BKMNG_SNOWHOUSE_EAI`
+- The S3 host was required for large query result sets (fetched via presigned URL)
 
 ## GitHub Repository
 
