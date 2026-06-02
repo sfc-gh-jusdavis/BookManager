@@ -1,10 +1,17 @@
-.PHONY: up down logs logs-backend logs-frontend rebuild shell-backend shell-frontend clean up-detach setup test-spcs-build deploy logs-spcs restart-service sync-flags
+.PHONY: up down logs logs-backend logs-frontend rebuild shell-backend shell-frontend clean up-detach setup test-spcs-build deploy logs-spcs restart-service sync-flags create-service-snowhouse deploy-snowhouse logs-snowhouse restart-snowhouse
 
 SPCS_REGISTRY := sfsenorthamerica-jdavis-aws1.registry.snowflakecomputing.com
 SPCS_IMAGE    := $(SPCS_REGISTRY)/bookmanager/demo/bkmng_repo/bkmng:latest
 SPCS_SPEC     := bkmng-spec-demo.yaml
 SPCS_SERVICE  := BOOKMANAGER.DEMO.BKMNG_SERVICE
 SNOW_CONN     := bkmng_deploy
+
+# Snowhouse SPCS deployment — uses SE_ENABLEMENT_POOL, SPCS token auth (no PAT)
+SNOWHOUSE_REGISTRY := sfcogsops-snowhouse-aws-us-west-2.registry.snowflakecomputing.com
+SNOWHOUSE_IMAGE    := $(SNOWHOUSE_REGISTRY)/temp/jusdavis/bkmng_repo/bkmng:latest
+SNOWHOUSE_SPEC     := bkmng-spec-snowhouse.yaml
+SNOWHOUSE_SERVICE  := TEMP.JUSDAVIS.BKMNG_SERVICE
+SNOWHOUSE_CONN     := SNOWHOUSE_AWS_US_WEST_2
 ENV_FILE      := backend/.env
 
 # Load BKMNG_DEPLOY_PAT from .env into SNOWFLAKE_PASSWORD for snow CLI
@@ -107,3 +114,37 @@ deploy-pipeline-monitor:
 	  snow sql -c SNOWHOUSE_AWS_US_WEST_2 -q "PUT file://$$PWD/streamlit_app.py @TEMP.JUSDAVIS.BKMNG_STREAMLIT_STAGE/pipeline_monitor/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE;" && \
 	  snow sql -c SNOWHOUSE_AWS_US_WEST_2 -q "PUT file://$$PWD/environment.yml @TEMP.JUSDAVIS.BKMNG_STREAMLIT_STAGE/pipeline_monitor/ AUTO_COMPRESS=FALSE OVERWRITE=TRUE;"
 	@echo "Pipeline monitor source uploaded. Refresh the SiS app in Snowsight to pick up changes."
+
+# ─── Snowhouse SPCS targets ────────────────────────────────────────────────────
+# Registry login opens a browser (externalbrowser SSO) — run on the host Mac.
+
+# One-time: build, push, and CREATE the Snowhouse service. Run once, then use deploy-snowhouse.
+create-service-snowhouse: test-spcs-build
+	@echo "Logging in to Snowhouse image registry (browser will open)..."
+	snow spcs image-registry login --connection $(SNOWHOUSE_CONN)
+	docker tag bkmng:spcs-test $(SNOWHOUSE_IMAGE)
+	docker push $(SNOWHOUSE_IMAGE)
+	@echo "Creating Snowhouse SPCS service..."
+	snow sql -c $(SNOWHOUSE_CONN) -q "CREATE SERVICE IF NOT EXISTS $(SNOWHOUSE_SERVICE) IN COMPUTE POOL SE_ENABLEMENT_POOL FROM SPECIFICATION \$$\$$$$(cat $(SNOWHOUSE_SPEC))\$$\$$ MIN_INSTANCES=1 MAX_INSTANCES=1;"
+	@echo "Endpoint URL:"
+	snow sql -c $(SNOWHOUSE_CONN) -q "SHOW ENDPOINTS IN SERVICE $(SNOWHOUSE_SERVICE);"
+
+# Ongoing: build, push, and ALTER the Snowhouse service spec.
+deploy-snowhouse: test-spcs-build sync-flags
+	@echo "Logging in to Snowhouse image registry (browser will open)..."
+	snow spcs image-registry login --connection $(SNOWHOUSE_CONN)
+	docker tag bkmng:spcs-test $(SNOWHOUSE_IMAGE)
+	docker push $(SNOWHOUSE_IMAGE)
+	@echo "Updating Snowhouse SPCS service..."
+	snow sql -c $(SNOWHOUSE_CONN) -q "ALTER SERVICE $(SNOWHOUSE_SERVICE) FROM SPECIFICATION \$$\$$$$(cat $(SNOWHOUSE_SPEC))\$$\$$"
+	@echo "Deployed. Check endpoint with: make logs-snowhouse"
+
+# Tail container logs from Snowhouse SPCS.
+logs-snowhouse:
+	snow sql -c $(SNOWHOUSE_CONN) -q "SELECT SYSTEM\$$GET_SERVICE_LOGS('$(SNOWHOUSE_SERVICE)', '0', 'bkmng', 200);"
+
+# Suspend + resume without pushing a new image (e.g. after spec changes).
+restart-snowhouse:
+	snow sql -c $(SNOWHOUSE_CONN) -q "ALTER SERVICE $(SNOWHOUSE_SERVICE) SUSPEND;"
+	snow sql -c $(SNOWHOUSE_CONN) -q "ALTER SERVICE $(SNOWHOUSE_SERVICE) RESUME;"
+	@echo "Snowhouse service restarted."
