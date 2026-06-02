@@ -47,6 +47,7 @@ const SIGNAL_LABELS: Record<string, string> = {
   ticket_volume_spike: "Ticket Volume",
   no_interaction_14d: "No Interaction (14d)",
   no_interaction_7d: "No Interaction (7d)",
+  cadence_slipping: "Cadence Slipping",
   champion_silent: "Champion Silent",
   capacity_warning: "Capacity Warning",
   consumption_spike: "Consumption Spike",
@@ -76,6 +77,7 @@ const SIGNAL_CATEGORY: Record<string, string> = {
   escalated_ticket: "support", long_running_ticket: "support",
   ticket_volume_spike: "support",
   no_interaction_14d: "engagement", no_interaction_7d: "engagement",
+  cadence_slipping: "engagement",
   champion_silent: "engagement",
   consumption_spike: "consumption", consumption_dip: "consumption",
   capacity_warning: "consumption", contract_ending: "consumption",
@@ -120,7 +122,7 @@ function SignalIcon({ type, size = 13 }: { type: string; size?: number }) {
     return <AlertTriangle size={size} className={`${base} text-orange-500`} />;
   if (type === "long_running_ticket" || type === "ticket_volume_spike")
     return <Clock size={size} className={`${base} text-amber-500`} />;
-  if (type === "no_interaction_14d" || type === "no_interaction_7d" || type === "champion_silent")
+  if (type === "no_interaction_14d" || type === "no_interaction_7d" || type === "champion_silent" || type === "cadence_slipping")
     return <PhoneMissed size={size} className={`${base} text-slate-400`} />;
   if (type === "capacity_warning")
     return <AlertTriangle size={size} className={`${base} text-emerald-600`} />;

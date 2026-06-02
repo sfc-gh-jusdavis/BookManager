@@ -103,6 +103,24 @@ ALERT_CATALOG = [
         "default_priority": "medium",
     },
     {
+        "signal_type": "cadence_slipping",
+        "label": "Weekly Cadence Slipping",
+        "description": (
+            "Fires when an account with an active use case has gone 8+ days since "
+            "the last meeting AND has no upcoming meeting on the calendar. "
+            "Aligned to the FQ1 finding that weekly cadence (6-12 meetings/qtr) "
+            "doubles go-live rate vs sporadic cadence (1-5 meetings/qtr)."
+        ),
+        "how_generated": (
+            "Checked daily during signal refresh. Queries BKMNG_ONT_ACCOUNTS for "
+            "ACTIVE_USE_CASE_COUNT > 0, no upcoming meetings in the next 5 days, "
+            "and either 8-13 days since LAST_MEETING_DATE or no meeting ever recorded "
+            "on an account interacted with in the last 30 days. Excludes Churned/Renewal."
+        ),
+        "category": "engagement",
+        "default_priority": "medium",
+    },
+    {
         "signal_type": "no_interaction_14d",
         "label": "No Call in 14+ Days",
         "description": (
